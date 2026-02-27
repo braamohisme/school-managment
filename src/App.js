@@ -203,7 +203,7 @@ function Modal({open,onClose,title,children,width=520,T,dir="rtl"}){
 }
 function Toast({msg,onDone,T}){
   const[v,setV]=useState(true);
-  useEffect(()=>{const id=setTimeout(()=>{setV(false);onDone();},2800);return()=>clearTimeout(id);},[]);
+  useEffect(()=>{const id=setTimeout(()=>{setV(false);onDone();},2800);return()=>clearTimeout(id);},[onDone]);
   if(!v||!msg)return null;
   const err=msg.startsWith("!");
   return <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:200,background:err?T.danger:T.success,color:"#fff",padding:"11px 22px",borderRadius:10,fontWeight:600,fontSize:13,boxShadow:"0 4px 28px rgba(0,0,0,.3)",display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap"}}><Ic n={err?"alert":"check"} size={15} color="#fff"/>{err?msg.slice(1):msg}</div>;
@@ -420,7 +420,7 @@ function AdminDashboard({onBack,dark,onToggleTheme,lang,onToggleLang,creds,onCre
       }
     }
     load();
-  },[]);
+  },[onCredsChange,onPeriodsChange]);
 
   const addStudent=async()=>{
     if(!ns.name||!ns.email)return;

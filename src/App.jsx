@@ -93,15 +93,24 @@ const sb = {
     } catch { return false; }
   },
   async signIn(email,password){
-    if(!SB_READY)return null;
+    if(!SB_READY)return {ok:false,status:0,error:"supabase_not_ready",data:null};
     try{
       const r=await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`,{
         method:"POST",
         headers:{"Content-Type":"application/json",apikey:SUPABASE_KEY},
         body:JSON.stringify({email,password})
       });
-      return r.ok?r.json():null;
-    }catch{return null;}
+      const data=await r.json().catch(()=>null);
+      if(r.ok)return {ok:true,status:r.status,error:null,data};
+      return {
+        ok:false,
+        status:r.status,
+        error:data?.msg||data?.error_description||data?.error||"login_failed",
+        data:null
+      };
+    }catch{
+      return {ok:false,status:0,error:"network_or_auth_failed",data:null};
+    }
   },
   async signUp(email,password){
     if(!SB_READY)return {ok:false};
@@ -196,6 +205,9 @@ const TR = {
     email:"البريد الإلكتروني",password:"كلمة المرور",signInBtn:"دخول",signingIn:"جارٍ الدخول...",
     keepLoggedIn:"ابقَ متصلاً",demoAccounts:"حسابات تجريبية",
     invalidCreds:"بريد إلكتروني أو كلمة مرور غير صحيحة.",
+    emailNotConfirmed:"الحساب موجود لكن البريد غير مُؤكَّد في Supabase.",
+    authConfigIssue:"مشكلة إعدادات المصادقة في الخادم (مفاتيح/بيئة).",
+    authServiceIssue:"تعذر الاتصال بخدمة تسجيل الدخول. حاول مجددًا.",
     accessDenied:"الدخول مرفوض. لم تتم الموافقة على حسابك.",
     welcome:"مرحباً،",signOut:"خروج",
     admin:"المدير",teacher:"المعلم",student:"الطالب",busDriver:"سائق الحافلة",accountant:"المحاسب",
@@ -249,6 +261,9 @@ const TR = {
     email:"Email",password:"Password",signInBtn:"Sign In",signingIn:"Signing in...",
     keepLoggedIn:"Keep me logged in",demoAccounts:"Demo accounts",
     invalidCreds:"Invalid credentials.",accessDenied:"Access denied.",
+    emailNotConfirmed:"Account exists but email is not confirmed in Supabase.",
+    authConfigIssue:"Server auth configuration issue (keys/env).",
+    authServiceIssue:"Could not reach auth service. Please try again.",
     welcome:"Welcome,",signOut:"Sign out",
     admin:"Admin",teacher:"Teacher",student:"Student",busDriver:"Bus Driver",accountant:"Accountant",
     schoolOps:"School operations",classAttend:"Classes & attendance",
@@ -533,8 +548,16 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
       const normalizedEmail=String(email||"").trim().toLowerCase();
       const u=creds[normalizedEmail];
       if(SB_READY){
-        const sess=await sb.signIn(normalizedEmail,pass);
-        if(!sess){setErr(t.invalidCreds);return;}
+        const signInRes=await sb.signIn(normalizedEmail,pass);
+        if(!signInRes?.ok){
+          const em=String(signInRes?.error||"").toLowerCase();
+          if(em.includes("invalid login credentials")) setErr(t.invalidCreds);
+          else if(em.includes("email not confirmed")) setErr(t.emailNotConfirmed);
+          else if(em.includes("invalid api key")||em.includes("apikey")||em.includes("api key")) setErr(t.authConfigIssue);
+          else setErr(t.authServiceIssue);
+          return;
+        }
+        const sess=signInRes.data;
         const fallback=u||{name:normalizedEmail,role:null,metadata:{}};
         let fromDb=(await sb.get("app_users",`?email=eq.${esc(normalizedEmail)}&select=name,role,phone,grade,subject,bus_number,route&limit=1`,sess.access_token||null))?.[0];
         if(!fromDb&&u){

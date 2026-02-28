@@ -5,6 +5,8 @@ Copy `.env.example` to `.env` and set:
 
 - `REACT_APP_SUPABASE_URL`
 - `REACT_APP_SUPABASE_KEY` (anon key only)
+- `VITE_SUPABASE_URL` (recommended for Vite/Vercel)
+- `VITE_SUPABASE_KEY` (recommended for Vite/Vercel, anon key only)
 
 Do not commit `.env`.
 
@@ -40,7 +42,7 @@ After sign-in, the app reads role/profile data from `app_users` table by email.
 If env vars are missing, the UI switches to offline demo mode.
 
 ## 5) Quick login checklist
-1. `.env` exists with correct `REACT_APP_SUPABASE_URL` and `REACT_APP_SUPABASE_KEY`.
+1. `.env` exists with correct `VITE_SUPABASE_URL` and `VITE_SUPABASE_KEY`.
 2. Both SQL files were executed successfully.
 3. Auth users were created in Supabase Authentication.
 4. Use one of the credentials above to sign in.

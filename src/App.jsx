@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
-// Read from environment variables (set these in your build / .env)
-const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
-const SUPABASE_KEY = process.env.REACT_APP_SUPABASE_KEY;
+// Read from Vite env first, then legacy fallback.
+const META_ENV = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : {};
+const PROC_ENV = (typeof process !== "undefined" && process.env) ? process.env : {};
+const SUPABASE_URL = META_ENV.VITE_SUPABASE_URL || META_ENV.REACT_APP_SUPABASE_URL || PROC_ENV.REACT_APP_SUPABASE_URL || "";
+const SUPABASE_KEY = META_ENV.VITE_SUPABASE_KEY || META_ENV.REACT_APP_SUPABASE_KEY || PROC_ENV.REACT_APP_SUPABASE_KEY || "";
 const SB_READY = Boolean(SUPABASE_URL && SUPABASE_KEY);
 const H = SB_READY ? { "Content-Type":"application/json", apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}` } : null;
 const esc = v => encodeURIComponent(String(v));

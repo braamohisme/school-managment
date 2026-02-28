@@ -1,11 +1,9 @@
 import { useState, useEffect } from "react";
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
-// Read from Vite env first, then legacy fallback.
-const META_ENV = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : {};
-const PROC_ENV = (typeof process !== "undefined" && process.env) ? process.env : {};
-const SUPABASE_URL = META_ENV.VITE_SUPABASE_URL || META_ENV.REACT_APP_SUPABASE_URL || PROC_ENV.REACT_APP_SUPABASE_URL || "";
-const SUPABASE_KEY = META_ENV.VITE_SUPABASE_KEY || META_ENV.REACT_APP_SUPABASE_KEY || PROC_ENV.REACT_APP_SUPABASE_KEY || "";
+// Read from environment variables (set these in your build / .env)
+const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
+const SUPABASE_KEY = process.env.REACT_APP_SUPABASE_KEY;
 const SB_READY = Boolean(SUPABASE_URL && SUPABASE_KEY);
 const H = SB_READY ? { "Content-Type":"application/json", apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}` } : null;
 const esc = v => encodeURIComponent(String(v));
@@ -213,11 +211,8 @@ const STUDENT_ATT=initAtt();
 const initGrades=()=>{const r={};DEMO_STUDENTS.forEach(s=>{r[s.id]={p1:{math:85,science:88,english:90,history:87,art:92},p2:{math:88,science:90,english:87,history:89,art:94},p3:{math:90,science:92,english:89,history:91,art:95},p4:{math:91,science:93,english:91,history:90,art:96}};});return r;};
 
 // ── Shared components ─────────────────────────────────────────────────────────
-function ThemeTabs({themeMode,onChange,T,t}){
-  const opts=[["dark",t.dark],["light",t.light],["leaf",t.leaf]];
-  return <div style={{display:"flex",alignItems:"center",background:T.surface,border:`1px solid ${T.border2}`,borderRadius:8,padding:2}}>
-    {opts.map(([id,lbl])=><button key={id} onClick={()=>onChange(id)} style={{padding:"5px 10px",border:"none",borderRadius:6,background:themeMode===id?T.accent:"transparent",color:themeMode===id?T.accentInv:T.textSub,fontSize:11,fontWeight:700,cursor:"pointer"}}>{lbl}</button>)}
-  </div>;
+function ThemeToggle({dark,onToggle,T,t}){
+  return <button onClick={onToggle} style={{display:"flex",alignItems:"center",gap:6,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:8,padding:"7px 12px",color:T.textSub,fontSize:12,cursor:"pointer"}}><Ic n={dark?"sun":"moon"} size={14} color={T.textSub}/><span style={{fontSize:12,fontWeight:600}}>{dark?t.light:t.dark}</span></button>;
 }
 function LangToggle({lang,onToggle,T}){
   return <button onClick={onToggle} style={{display:"flex",alignItems:"center",gap:6,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:8,padding:"7px 12px",color:T.textSub,fontSize:12,fontWeight:600,cursor:"pointer"}}><Ic n="globe" size={14} color={T.textSub}/>{lang==="ar"?"EN":"عربي"}</button>;
@@ -256,7 +251,7 @@ function InfoCard({T,name,icon,details}){
   return <Card T={T} style={{marginBottom:22}}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}><div style={{width:42,height:42,borderRadius:10,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center"}}><Ic n={icon||"user"} size={20} color={T.textSub}/></div><div style={{fontWeight:800,fontSize:17}}>{name}</div></div><div style={{display:"flex",flexWrap:"wrap",gap:"6px 28px"}}>{details.map((d,i)=><span key={i} style={{fontSize:12,color:T.textSub,display:"flex",alignItems:"center",gap:5}}>{d.icon&&<Ic n={d.icon} size={12} color={T.textMuted}/>}{d.label&&<span style={{fontWeight:600,color:T.textMuted,fontSize:11,textTransform:"uppercase",letterSpacing:"0.05em"}}>{d.label}:</span>}{d.value}</span>)}</div></Card>;
 }
 
-function PageShell({T,t,themeMode,onThemeChange,lang,onToggleLang,onBack,title,icon,children,rightEl,sync}){
+function PageShell({T,t,dark,onToggleTheme,lang,onToggleLang,onBack,title,icon,children,rightEl,sync}){
   return <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",direction:t.dir}}>
     <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}} *{box-sizing:border-box}`}</style>
     <div style={{padding:"18px 28px",borderBottom:`1px solid ${T.border}`,background:T.card,position:"sticky",top:0,zIndex:50}}>
@@ -272,7 +267,7 @@ function PageShell({T,t,themeMode,onThemeChange,lang,onToggleLang,onBack,title,i
           <SyncBadge s={sync} T={T}/>
           {rightEl}
           <LangToggle lang={lang} onToggle={onToggleLang} T={T}/>
-          <ThemeTabs themeMode={themeMode} onChange={onThemeChange} T={T} t={t}/>
+          <ThemeToggle dark={dark} onToggle={onToggleTheme} T={T} t={t}/>
         </div>
       </div>
     </div>
@@ -336,8 +331,8 @@ function AttendanceCalendar({T,t,editable=false,onSave,students=null,initAtt:iA=
 }
 
 // ── Login ─────────────────────────────────────────────────────────────────────
-function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
-  const T=getTheme(themeMode),t=TR[lang];
+function Login({onLogin,dark,onToggleTheme,lang,onToggleLang,creds}){
+  const T=dark?DARK:LIGHT,t=TR[lang];
   const[email,setEmail]=useState("");
   const[pass,setPass]=useState("");
   const[keep,setKeep]=useState(false);
@@ -378,7 +373,7 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
     <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}} input::placeholder{color:${T.textMuted}} *{box-sizing:border-box}`}</style>
     <div style={{position:"fixed",top:20,left:t.dir==="rtl"?20:"auto",right:t.dir==="rtl"?"auto":20,display:"flex",gap:8}}>
       <LangToggle lang={lang} onToggle={onToggleLang} T={T}/>
-      <ThemeTabs themeMode={themeMode} onChange={onThemeChange} T={T} t={t}/>
+      <ThemeToggle dark={dark} onToggle={onToggleTheme} T={T} t={t}/>
     </div>
     <div style={{width:"100%",maxWidth:380}}>
       <div style={{marginBottom:32,textAlign:"center"}}>
@@ -399,8 +394,8 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
 }
 
 // ── Home ──────────────────────────────────────────────────────────────────────
-function Home({user,onNavigate,onSignOut,themeMode,onThemeChange,lang,onToggleLang}){
-  const T=getTheme(themeMode),t=TR[lang];
+function Home({user,onNavigate,onSignOut,dark,onToggleTheme,lang,onToggleLang}){
+  const T=dark?DARK:LIGHT,t=TR[lang];
   const portals=[
     {role:["admin"],              path:"admin",     title:t.admin,     sub:t.schoolOps,    icon:"admin"},
     {role:["teacher","admin"],    path:"teacher",   title:t.teacher,   sub:t.classAttend,  icon:"teacher"},
@@ -417,7 +412,7 @@ function Home({user,onNavigate,onSignOut,themeMode,onThemeChange,lang,onToggleLa
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <LangToggle lang={lang} onToggle={onToggleLang} T={T}/>
-          <ThemeTabs themeMode={themeMode} onChange={onThemeChange} T={T} t={t}/>
+          <ThemeToggle dark={dark} onToggle={onToggleTheme} T={T} t={t}/>
           <BtnO T={T} style={{padding:"7px 14px",fontSize:12}} onClick={onSignOut}><Ic n="signout" size={14} color={T.textSub}/>{t.signOut}</BtnO>
         </div>
       </div>
@@ -436,8 +431,8 @@ function Home({user,onNavigate,onSignOut,themeMode,onThemeChange,lang,onToggleLa
 }
 
 // ── Admin Dashboard ───────────────────────────────────────────────────────────
-function AdminDashboard({onBack,themeMode,onThemeChange,lang,onToggleLang,creds,onCredsChange,gradePeriods,onPeriodsChange,studentGrades,onStudentGradesChange,subjects,onSubjectsChange}){
-  const T=getTheme(themeMode),t=TR[lang],dir=t.dir;
+function AdminDashboard({onBack,dark,onToggleTheme,lang,onToggleLang,creds,onCredsChange,gradePeriods,onPeriodsChange,studentGrades,onStudentGradesChange,subjects,onSubjectsChange}){
+  const T=dark?DARK:LIGHT,t=TR[lang],dir=t.dir;
   const[students,setStudents]=useState(DEMO_STUDENTS);
   const[teachers,setTeachers]=useState(DEMO_TEACHERS);
   const[modal,setModal]=useState(null);
@@ -518,7 +513,7 @@ function AdminDashboard({onBack,themeMode,onThemeChange,lang,onToggleLang,creds,
   const delCred=email=>{if(email==="admin@school.edu")return;const u={...creds};delete u[email];onCredsChange(u);setToast(t.credDeleted);};
   const rc={admin:T.warn,teacher:T.success,student:"#60a5fa",bus_driver:T.textSub};
 
-  return <PageShell T={T} t={t} themeMode={themeMode} onThemeChange={onThemeChange} lang={lang} onToggleLang={onToggleLang} onBack={onBack} title={t.admin} icon="admin" sync={sync}>
+  return <PageShell T={T} t={t} dark={dark} onToggleTheme={onToggleTheme} lang={lang} onToggleLang={onToggleLang} onBack={onBack} title={t.admin} icon="admin" sync={sync}>
     {toast&&<Toast msg={toast} onDone={()=>setToast("")} T={T}/>}
     <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:24}}>
       {[[t.students,students.length,"users",T.success],[t.teachers,teachers.length,"teacher",T.warn],[t.grades,[...new Set(students.map(s=>s.grade))].length,"grades","#60a5fa"]].map(([l,v,ic,c])=>
@@ -600,8 +595,8 @@ function AdminDashboard({onBack,themeMode,onThemeChange,lang,onToggleLang,creds,
 }
 
 // ── Teacher Dashboard ─────────────────────────────────────────────────────────
-function TeacherDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,onSignOut,gradePeriods,studentGrades,onStudentGradesChange,subjects=[]}){
-  const T=getTheme(themeMode),t=TR[lang],dir=t.dir;
+function TeacherDashboard({user,onBack,dark,onToggleTheme,lang,onToggleLang,onSignOut,gradePeriods,studentGrades,onStudentGradesChange,subjects=[]}){
+  const T=dark?DARK:LIGHT,t=TR[lang],dir=t.dir;
   const[students]=useState(DEMO_STUDENTS);
   const[studAtt]=useState(STUDENT_ATT);
   const[activeGrade,setActiveGrade]=useState(null);
@@ -635,7 +630,7 @@ function TeacherDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
     setSync(ok?"ok":"fail");setEditSt(null);
   };
 
-  return <PageShell T={T} t={t} themeMode={themeMode} onThemeChange={onThemeChange} lang={lang} onToggleLang={onToggleLang} onBack={onBack} title={t.teacher} icon="teacher" sync={sync}
+  return <PageShell T={T} t={t} dark={dark} onToggleTheme={onToggleTheme} lang={lang} onToggleLang={onToggleLang} onBack={onBack} title={t.teacher} icon="teacher" sync={sync}
     rightEl={<BtnO T={T} style={{padding:"7px 14px",fontSize:12}} onClick={onSignOut}><Ic n="signout" size={14} color={T.textSub}/>{t.signOut}</BtnO>}>
     {toast&&<Toast msg={toast} onDone={()=>setToast("")} T={T}/>}
     <InfoCard T={T} name={user.name} icon="teacher" details={[{icon:"book",label:t.subject,value:tSubjLabel},{icon:"phone",label:t.phone,value:user.metadata?.phone||"—"}]}/>
@@ -690,8 +685,8 @@ function TeacherDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
 }
 
 // ── Student Dashboard ─────────────────────────────────────────────────────────
-function StudentDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,onSignOut,gradePeriods,studentGrades,subjects=[]}){
-  const T=getTheme(themeMode),t=TR[lang];
+function StudentDashboard({user,onBack,dark,onToggleTheme,lang,onToggleLang,onSignOut,gradePeriods,studentGrades,subjects=[]}){
+  const T=dark?DARK:LIGHT,t=TR[lang];
   const[tab,setTab]=useState("grades");
   const sr=DEMO_STUDENTS.find(s=>s.email===user.email)||{};
   const info={name:user.name,grade:user.metadata?.grade||"الصف 10",phone:user.metadata?.phone||sr.phone||"—"};
@@ -705,7 +700,7 @@ function StudentDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
   const finals=Object.fromEntries(SKEYS.map(s=>[s,sAvg(s)]));
   const total=Math.round(SKEYS.reduce((a,s)=>a+finals[s],0)/SKEYS.length);
 
-  return <PageShell T={T} t={t} themeMode={themeMode} onThemeChange={onThemeChange} lang={lang} onToggleLang={onToggleLang} onBack={onBack} title={t.student} icon="student"
+  return <PageShell T={T} t={t} dark={dark} onToggleTheme={onToggleTheme} lang={lang} onToggleLang={onToggleLang} onBack={onBack} title={t.student} icon="student"
     rightEl={<BtnO T={T} style={{padding:"7px 14px",fontSize:12}} onClick={onSignOut}><Ic n="signout" size={14} color={T.textSub}/>{t.signOut}</BtnO>}>
     <div style={{display:"flex",gap:16,alignItems:"stretch",marginBottom:24,flexWrap:"wrap"}}>
       <InfoCard T={T} name={info.name} icon="student" details={[{icon:"grades",label:t.grade,value:info.grade},{icon:"phone",label:t.phone,value:info.phone}]}/>
@@ -731,12 +726,12 @@ function StudentDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
 }
 
 // ── Bus Driver Dashboard ──────────────────────────────────────────────────────
-function BusDriverDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,onSignOut}){
-  const T=getTheme(themeMode),t=TR[lang];
+function BusDriverDashboard({user,onBack,dark,onToggleTheme,lang,onToggleLang,onSignOut}){
+  const T=dark?DARK:LIGHT,t=TR[lang];
   const[tracking,setTracking]=useState(false);
   const info={name:user.name,bus:user.metadata?.busNumber||"حافلة 45",route:user.metadata?.route||"مسار أ",phone:user.metadata?.phone||"—"};
 
-  return <PageShell T={T} t={t} themeMode={themeMode} onThemeChange={onThemeChange} lang={lang} onToggleLang={onToggleLang} onBack={onBack} title={t.busDriver} icon="bus"
+  return <PageShell T={T} t={t} dark={dark} onToggleTheme={onToggleTheme} lang={lang} onToggleLang={onToggleLang} onBack={onBack} title={t.busDriver} icon="bus"
     rightEl={<BtnO T={T} style={{padding:"7px 14px",fontSize:12}} onClick={onSignOut}><Ic n="signout" size={14} color={T.textSub}/>{t.signOut}</BtnO>}>
     <InfoCard T={T} name={info.name} icon="bus" details={[{icon:"map",label:"المسار",value:info.route},{icon:"phone",label:t.phone,value:info.phone},{icon:"bus",label:"الحافلة",value:info.bus}]}/>
     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:22}}>
@@ -776,7 +771,7 @@ function BusDriverDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLa
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 export default function App(){
-  const[themeMode,setThemeMode]=useState("dark");
+  const[dark,setDark]=useState(true);
   const[lang,setLang]=useState("ar");
   const[creds,setCreds]=useState(DEFAULT_CREDS);
   const[periods,setPeriods]=useState(DEFAULT_PERIODS);
@@ -804,7 +799,7 @@ export default function App(){
   const[page,setPage]=useState(()=>{const s=getSaved();if(!s)return"login";if(s.role==="teacher")return"teacher";if(s.role==="student")return"student";if(s.role==="bus_driver")return"bus-driver";return"home";});
   const login=(u,keep)=>{setUser(u);if(keep){try{sessionStorage.setItem("sms_user",JSON.stringify(u));}catch{}}if(u.role==="admin")setPage("home");else if(u.role==="teacher")setPage("teacher");else if(u.role==="student")setPage("student");else if(u.role==="bus_driver")setPage("bus-driver");else setPage("home");};
   const logout=()=>{try{sessionStorage.removeItem("sms_user");}catch{}setUser(null);setPage("login");};
-  const sh={themeMode,onThemeChange:setThemeMode,lang,onToggleLang:()=>setLang(l=>l==="ar"?"en":"ar")};
+  const sh={dark,onToggleTheme:()=>setDark(d=>!d),lang,onToggleLang:()=>setLang(l=>l==="ar"?"en":"ar")};
   if(!user||page==="login")return <Login {...sh} onLogin={login} creds={creds}/>;
   const dp={...sh,user,onBack:user?.role==="admin"?()=>setPage("home"):null,onSignOut:logout};
   if(page==="home")      return <Home {...sh} user={user} onNavigate={setPage} onSignOut={logout}/>;

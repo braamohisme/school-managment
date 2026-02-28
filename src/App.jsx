@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
 // Read from Vite env first, then legacy fallback.
@@ -6,22 +6,91 @@ const META_ENV = (typeof import.meta !== "undefined" && import.meta.env) ? impor
 const PROC_ENV = (typeof process !== "undefined" && process.env) ? process.env : {};
 const SUPABASE_URL = META_ENV.VITE_SUPABASE_URL || META_ENV.REACT_APP_SUPABASE_URL || PROC_ENV.REACT_APP_SUPABASE_URL || "";
 const SUPABASE_KEY = META_ENV.VITE_SUPABASE_KEY || META_ENV.REACT_APP_SUPABASE_KEY || PROC_ENV.REACT_APP_SUPABASE_KEY || "";
+const IS_LOCAL_DEV = typeof window !== "undefined" && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname);
+const IS_DEV = Boolean(META_ENV.DEV);
 const SB_READY = Boolean(SUPABASE_URL && SUPABASE_KEY);
 const H = SB_READY ? { "Content-Type":"application/json", apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}` } : null;
 const esc = v => encodeURIComponent(String(v));
 
 const sb = {
-  async get(table, qs="") {
+  async get(table, qs="", accessToken=null) {
     if(!SB_READY)return null;
-    try { const r=await fetch(`${SUPABASE_URL}/rest/v1/${table}${qs}`,{headers:H}); return r.ok?r.json():null; } catch { return null; }
+    try {
+      const headers=accessToken?{...H,Authorization:`Bearer ${accessToken}`}:{...H};
+      const r=await fetch(`${SUPABASE_URL}/rest/v1/${table}${qs}`,{headers});
+      if(!r.ok)return null;
+      const txt=await r.text();
+      if(!txt)return [];
+      try{return JSON.parse(txt);}catch{return [];}
+    } catch { return null; }
   },
-  async upsert(table, body) {
+  async upsert(table, body, accessToken=null) {
     if(!SB_READY)return null;
-    try { const r=await fetch(`${SUPABASE_URL}/rest/v1/${table}`,{method:"POST",headers:{...H,Prefer:"resolution=merge-duplicates,return=representation"},body:JSON.stringify(body)}); return r.ok?r.json():null; } catch { return null; }
+    try {
+      const headers={...H,Prefer:"resolution=merge-duplicates,return=representation"};
+      if(accessToken)headers.Authorization=`Bearer ${accessToken}`;
+      const r=await fetch(`${SUPABASE_URL}/rest/v1/${table}`,{method:"POST",headers,body:JSON.stringify(body)});
+      if(!r.ok)return null;
+      const txt=await r.text();
+      if(!txt)return [];
+      try{return JSON.parse(txt);}catch{return [];}
+    } catch { return null; }
   },
-  async del(table, match) {
+  async upsertWithStatus(table, body, accessToken=null) {
+    if(!SB_READY)return {ok:false,status:0,error:"supabase_not_ready"};
+    try{
+      const headers={...H,Prefer:"resolution=merge-duplicates,return=representation"};
+      if(accessToken)headers.Authorization=`Bearer ${accessToken}`;
+      const r=await fetch(`${SUPABASE_URL}/rest/v1/${table}`,{
+        method:"POST",
+        headers,
+        body:JSON.stringify(body)
+      });
+      const txt=await r.text().catch(()=>"");
+      let parsed=null;
+      try{parsed=txt?JSON.parse(txt):null;}catch{}
+      return {
+        ok:r.ok,
+        status:r.status,
+        data:parsed,
+        error:parsed?.message||parsed?.error||txt||null
+      };
+    }catch(err){
+      return {ok:false,status:0,error:String(err?.message||err)};
+    }
+  },
+  async upsertWithStatusOnConflict(table, body, onConflict, accessToken=null) {
+    if(!SB_READY)return {ok:false,status:0,error:"supabase_not_ready"};
+    try{
+      const headers={...H,Prefer:"resolution=merge-duplicates,return=representation"};
+      if(accessToken)headers.Authorization=`Bearer ${accessToken}`;
+      const qs=onConflict?`?on_conflict=${encodeURIComponent(onConflict)}`:"";
+      const r=await fetch(`${SUPABASE_URL}/rest/v1/${table}${qs}`,{
+        method:"POST",
+        headers,
+        body:JSON.stringify(body)
+      });
+      const txt=await r.text().catch(()=>"");
+      let parsed=null;
+      try{parsed=txt?JSON.parse(txt):null;}catch{}
+      return {
+        ok:r.ok,
+        status:r.status,
+        data:parsed,
+        error:parsed?.message||parsed?.error||txt||null
+      };
+    }catch(err){
+      return {ok:false,status:0,error:String(err?.message||err)};
+    }
+  },
+  async del(table, match, accessToken=null) {
     if(!SB_READY)return false;
-    try { const qs=Object.entries(match).map(([k,v])=>`${k}=eq.${esc(v)}`).join("&"); const r=await fetch(`${SUPABASE_URL}/rest/v1/${table}?${qs}`,{method:"DELETE",headers:H}); return r.ok; } catch { return false; }
+    try {
+      const qs=Object.entries(match).map(([k,v])=>`${k}=eq.${esc(v)}`).join("&");
+      const headers=accessToken?{...H,Authorization:`Bearer ${accessToken}`}:{...H};
+      const r=await fetch(`${SUPABASE_URL}/rest/v1/${table}?${qs}`,{method:"DELETE",headers});
+      return r.ok;
+    } catch { return false; }
   },
   async signIn(email,password){
     if(!SB_READY)return null;
@@ -33,6 +102,36 @@ const sb = {
       });
       return r.ok?r.json():null;
     }catch{return null;}
+  },
+  async signUp(email,password){
+    if(!SB_READY)return {ok:false};
+    try{
+      const r=await fetch(`${SUPABASE_URL}/auth/v1/signup`,{
+        method:"POST",
+        headers:{"Content-Type":"application/json",apikey:SUPABASE_KEY},
+        body:JSON.stringify({email,password})
+      });
+      const data=await r.json().catch(()=>null);
+      if(r.ok)return {ok:true,data};
+      const msg=(data?.msg||data?.error_description||data?.error||"").toLowerCase();
+      if(msg.includes("already")||msg.includes("exists"))return {ok:true,alreadyExists:true,data};
+      return {ok:false,data,error:msg||"signup_failed"};
+    }catch{return {ok:false,error:"network_or_signup_failed"};}
+  },
+  async adminCreateUser(payload,accessToken=null){
+    try{
+      const headers={"Content-Type":"application/json"};
+      if(accessToken)headers.Authorization=`Bearer ${accessToken}`;
+      const r=await fetch("/api/admin-create-user",{
+        method:"POST",
+        headers,
+        body:JSON.stringify(payload)
+      });
+      const data=await r.json().catch(()=>null);
+      return {ok:r.ok,status:r.status,data};
+    }catch{
+      return {ok:false,status:0,data:null};
+    }
   }
 };
 
@@ -41,6 +140,16 @@ const DARK={bg:"#0a0a0a",surface:"#111",card:"#161616",border:"#242424",border2:
 const LIGHT={bg:"#f5f5f5",surface:"#ebebeb",card:"#fff",border:"#e0e0e0",border2:"#ccc",text:"#111",textSub:"#666",textMuted:"#aaa",accent:"#111",accentInv:"#fff",success:"#16a34a",warn:"#ca8a04",danger:"#dc2626",toggle:"#111"};
 const LEAF={bg:"#FBFAF5",surface:"#EFE8DA",card:"#fffdf7",border:"#e5dccb",border2:"#d7cab3",text:"#2B3A8C",textSub:"#49607a",textMuted:"#8f97a5",accent:"#2F9E44",accentInv:"#ffffff",success:"#2F9E44",warn:"#F4B400",danger:"#E57373",toggle:"#2B3A8C"};
 const getTheme=mode=>mode==="dark"?DARK:mode==="leaf"?LEAF:LIGHT;
+function useIsMobile(bp=768){
+  const get=()=>typeof window!=="undefined"&&window.innerWidth<bp;
+  const[m,setM]=useState(get);
+  useEffect(()=>{
+    const onR=()=>setM(get());
+    window.addEventListener("resize",onR);
+    return()=>window.removeEventListener("resize",onR);
+  },[bp]);
+  return m;
+}
 
 // ── Minimalist SVG Icons ──────────────────────────────────────────────────────
 const ICONS = {
@@ -89,13 +198,14 @@ const TR = {
     invalidCreds:"بريد إلكتروني أو كلمة مرور غير صحيحة.",
     accessDenied:"الدخول مرفوض. لم تتم الموافقة على حسابك.",
     welcome:"مرحباً،",signOut:"خروج",
-    admin:"المدير",teacher:"المعلم",student:"الطالب",busDriver:"سائق الحافلة",
+    admin:"المدير",teacher:"المعلم",student:"الطالب",busDriver:"سائق الحافلة",accountant:"المحاسب",
     schoolOps:"إدارة المدرسة",classAttend:"الفصول والحضور",
     gradesAttend:"الدرجات والحضور",routesGps:"المسارات والموقع",
     access:"دخول",back:"رجوع",
-    students:"الطلاب",teachers:"المعلمون",grades:"الدرجات",
-    addStudent:"إضافة طالب",addTeacher:"إضافة معلم",
+    students:"الطلاب",teachers:"المعلمون",grades:"الدرجات",accountants:"المحاسبون",
+    addStudent:"إضافة طالب",addTeacher:"إضافة معلم",addAccountant:"إضافة محاسب",
     name:"الاسم",emailLbl:"البريد",phone:"الهاتف",grade:"الصف",subject:"المادة",
+    tuitionTotal:"إجمالي الرسوم",tuitionPaid:"المدفوع",tuitionOwed:"المتبقي",
     attendance:"الحضور",gradesTxt:"الدرجات",
     present:"حاضر",absent:"غائب",rate:"النسبة",
     save:"حفظ",saveAttendance:"حفظ الحضور",saveGrades:"حفظ الدرجات",
@@ -107,10 +217,18 @@ const TR = {
     studentAdded:"تمت إضافة الطالب.",teacherAdded:"تمت إضافة المعلم.",
     attendanceSaved:"تم حفظ الحضور.",gradesSaved:"تم حفظ الدرجات.",
     average:"المعدل",editGrades:"تعديل الدرجات",edit:"تعديل",
+    viewProfile:"عرض الملف",
     clickToToggle:"انقر على يوم لتغيير الحضور",
     selectStudent:"اختر طالباً",dark:"داكن",light:"فاتح",leaf:"ورقي",
     approvedLogins:"الحسابات المعتمدة",addCredential:"إضافة حساب",
-    roleLabel:"الدور",newPassword:"كلمة المرور",credAdded:"تمت الإضافة.",credDeleted:"تم الحذف.",deleteBtn:"حذف",
+    roleLabel:"الدور",newPassword:"كلمة المرور",credAdded:"تمت الإضافة.",credDeleted:"تم الحذف.",deleteBtn:"حذف",allGrades:"كل الصفوف",
+    createApprovedLogin:"إنشاء حساب دخول معتمد",loginPwdRequired:"أدخل كلمة مرور لحساب الدخول.",
+    editInfo:"تعديل المعلومات",saveChanges:"حفظ التعديلات",changesSaved:"تم حفظ التعديلات.",
+    linkedLoginEmailChangeBlocked:"لا يمكن تغيير البريد لأنه مرتبط بحساب دخول معتمد.",
+    approvedLoginLinked:"هذا المستخدم لديه حساب دخول معتمد.",
+    createLoginOnSave:"إنشاء حساب دخول معتمد عند الحفظ",
+    authExistsPwdNotChanged:"هذا البريد لديه حساب مسبقاً. كلمة المرور الجديدة لم تُحدّث. استخدم بريداً آخر أو أعد تعيين كلمة المرور.",
+    seeAllGrades:"عرض كل الدرجات",
     gradePeriods:"فترات التقييم",addPeriod:"إضافة فترة",periodName:"اسم الفترة",
     periodAdded:"تمت إضافة الفترة.",periodDeleted:"تم حذف الفترة.",
     initialGrades:"الدرجات الأولية (اختياري)",gradeLevel:"المستوى الدراسي",
@@ -122,7 +240,7 @@ const TR = {
     noGradePeriods:"لا توجد فترات تقييم — يرجى طلبها من المدير.",
     mySubjectOnly:"تعديل درجات مادتك فقط",
     grades1to12:Array.from({length:12},(_,i)=>`الصف ${i+1}`),
-    roles:{admin:"مدير",teacher:"معلم",student:"طالب",bus_driver:"سائق حافلة"},
+    roles:{admin:"مدير",teacher:"معلم",student:"طالب",bus_driver:"سائق حافلة",accountant:"محاسب"},
     subjectsSection:"المواد الدراسية",addSubject:"إضافة مادة",subjectName:"اسم المادة",
     subjectAdded:"تمت إضافة المادة.",subjectDeleted:"تم حذف المادة.",gradeForTeacher:"الصف المسؤول",
   },
@@ -132,13 +250,14 @@ const TR = {
     keepLoggedIn:"Keep me logged in",demoAccounts:"Demo accounts",
     invalidCreds:"Invalid credentials.",accessDenied:"Access denied.",
     welcome:"Welcome,",signOut:"Sign out",
-    admin:"Admin",teacher:"Teacher",student:"Student",busDriver:"Bus Driver",
+    admin:"Admin",teacher:"Teacher",student:"Student",busDriver:"Bus Driver",accountant:"Accountant",
     schoolOps:"School operations",classAttend:"Classes & attendance",
     gradesAttend:"Grades & attendance",routesGps:"Routes & GPS",
     access:"Access",back:"Back",
-    students:"Students",teachers:"Teachers",grades:"Grades",
-    addStudent:"Add student",addTeacher:"Add teacher",
+    students:"Students",teachers:"Teachers",grades:"Grades",accountants:"Accountants",
+    addStudent:"Add student",addTeacher:"Add teacher",addAccountant:"Add accountant",
     name:"Name",emailLbl:"Email",phone:"Phone",grade:"Grade",subject:"Subject",
+    tuitionTotal:"Total fee",tuitionPaid:"Paid",tuitionOwed:"Owed",
     attendance:"Attendance",gradesTxt:"Grades",
     present:"Present",absent:"Absent",rate:"Rate",
     save:"Save",saveAttendance:"Save attendance",saveGrades:"Save grades",
@@ -150,10 +269,18 @@ const TR = {
     studentAdded:"Student added.",teacherAdded:"Teacher added.",
     attendanceSaved:"Attendance saved.",gradesSaved:"Grades saved.",
     average:"Average",editGrades:"Edit grades",edit:"Edit",
+    viewProfile:"View Profile",
     clickToToggle:"Click a weekday to toggle attendance",
     selectStudent:"Select student",dark:"Dark",light:"Light",leaf:"Leaf",
     approvedLogins:"Approved Logins",addCredential:"Add credential",
-    roleLabel:"Role",newPassword:"Password",credAdded:"Credential added.",credDeleted:"Removed.",deleteBtn:"Remove",
+    roleLabel:"Role",newPassword:"Password",credAdded:"Credential added.",credDeleted:"Removed.",deleteBtn:"Remove",allGrades:"All Grades",
+    createApprovedLogin:"Create approved login",loginPwdRequired:"Enter a password for approved login.",
+    editInfo:"Edit info",saveChanges:"Save changes",changesSaved:"Changes saved.",
+    linkedLoginEmailChangeBlocked:"Cannot change email because it is linked to an approved login.",
+    approvedLoginLinked:"This user already has an approved login.",
+    createLoginOnSave:"Create approved login on save",
+    authExistsPwdNotChanged:"This email already has an Auth account. New password was not changed. Use another email or reset password.",
+    seeAllGrades:"See all grades",
     gradePeriods:"Grade Periods",addPeriod:"Add period",periodName:"Period name",
     periodAdded:"Period added.",periodDeleted:"Period removed.",
     initialGrades:"Initial Grades (optional)",gradeLevel:"Grade Level",
@@ -165,7 +292,7 @@ const TR = {
     noGradePeriods:"No grade periods defined. Ask admin to add some.",
     mySubjectOnly:"You can only edit your subject",
     grades1to12:Array.from({length:12},(_,i)=>`Grade ${i+1}`),
-    roles:{admin:"Admin",teacher:"Teacher",student:"Student",bus_driver:"Bus Driver"},
+    roles:{admin:"Admin",teacher:"Teacher",student:"Student",bus_driver:"Bus Driver",accountant:"Accountant"},
     subjectsSection:"Subjects",addSubject:"Add subject",subjectName:"Subject name",
     subjectAdded:"Subject added.",subjectDeleted:"Subject removed.",gradeForTeacher:"Assigned Grade",
   }
@@ -186,15 +313,18 @@ const DEMO_PASSWORDS = {
 };
 const SUBJ_KEYS = ["math","science","english","history","art"];
 const DEMO_STUDENTS = [
-  {id:"s1",name:"أليكس مارتينيز",email:"student@school.edu",grade:"الصف 10",phone:"+966 50 987 6543"},
-  {id:"s2",name:"جيمي لي",        email:"jamie@school.edu",  grade:"الصف 10",phone:"+966 50 234 5678"},
-  {id:"s3",name:"سام ريفيرا",     email:"sam@school.edu",    grade:"الصف 11",phone:"+966 50 345 6789"},
-  {id:"s4",name:"بريا باتيل",     email:"priya@school.edu",  grade:"الصف 11",phone:"+966 50 456 7890"},
-  {id:"s5",name:"كريس نجوين",     email:"chris@school.edu",  grade:"الصف 12",phone:"+966 50 567 8901"},
+  {id:"s1",name:"أليكس مارتينيز",email:"student@school.edu",grade:"الصف 10",phone:"+966 50 987 6543",tuition_total:10000,tuition_paid:7000},
+  {id:"s2",name:"جيمي لي",        email:"jamie@school.edu",  grade:"الصف 10",phone:"+966 50 234 5678",tuition_total:10000,tuition_paid:5500},
+  {id:"s3",name:"سام ريفيرا",     email:"sam@school.edu",    grade:"الصف 11",phone:"+966 50 345 6789",tuition_total:11000,tuition_paid:9000},
+  {id:"s4",name:"بريا باتيل",     email:"priya@school.edu",  grade:"الصف 11",phone:"+966 50 456 7890",tuition_total:11000,tuition_paid:3000},
+  {id:"s5",name:"كريس نجوين",     email:"chris@school.edu",  grade:"الصف 12",phone:"+966 50 567 8901",tuition_total:12000,tuition_paid:12000},
 ];
 const DEMO_TEACHERS = [
   {id:"t1",name:"د. سارة جونسون",email:"teacher@school.edu",subject:"math",   subjectDisplay:"رياضيات",phone:"+966 50 123 4567"},
   {id:"t2",name:"م. داود بارك",   email:"david@school.edu",  subject:"science",subjectDisplay:"علوم",    phone:"+966 50 678 9012"},
+];
+const DEMO_ACCOUNTANTS = [
+  {id:"a1",name:"ليلى المحاسبة",email:"accountant@school.edu",phone:"+966 50 222 1111"},
 ];
 const DEFAULT_PERIODS = [
   {id:"p1",label:"الربع الأول"},{id:"p2",label:"الربع الثاني"},
@@ -232,7 +362,7 @@ function Checkbox({checked,onChange,label,T}){
 }
 function Modal({open,onClose,title,children,width=520,T,dir="rtl"}){
   if(!open)return null;
-  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:20}}><div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:28,width:"100%",maxWidth:width,maxHeight:"90vh",overflowY:"auto",direction:dir}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}><span style={{fontSize:15,fontWeight:700,color:T.text}}>{title}</span><button onClick={onClose} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:7,color:T.textSub,cursor:"pointer",width:32,height:32,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>×</button></div>{children}</div></div>;
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:20,animation:"fadeOverlay .2s ease"}}><div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:28,width:"100%",maxWidth:width,maxHeight:"90vh",overflowY:"auto",direction:dir,animation:"popIn .22s ease"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}><span style={{fontSize:15,fontWeight:700,color:T.text}}>{title}</span><button onClick={onClose} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:7,color:T.textSub,cursor:"pointer",width:32,height:32,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>×</button></div>{children}</div></div>;
 }
 function Toast({msg,onDone,T}){
   const[v,setV]=useState(true);
@@ -244,10 +374,31 @@ function Toast({msg,onDone,T}){
 function Lbl({children,T}){return <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:T.textMuted,display:"block",marginBottom:6}}>{children}</span>;}
 function Inp({T,...p}){return <input {...p} style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 14px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box",...p.style}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>;}
 function Sel({T,children,...p}){return <select {...p} style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 14px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box",...p.style}}>{children}</select>;}
-function BtnP({T,style,children,...p}){return <button {...p} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,cursor:"pointer",fontWeight:600,borderRadius:8,border:"none",background:T.accent,color:T.accentInv,padding:"10px 20px",fontSize:13,...style}}>{children}</button>;}
-function BtnO({T,style,children,...p}){return <button {...p} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,cursor:"pointer",fontWeight:500,borderRadius:8,border:`1px solid ${T.border2}`,background:"transparent",color:T.text,padding:"9px 16px",fontSize:13,...style}}>{children}</button>;}
-function BtnG({T,style,children,...p}){return <button {...p} style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer",fontWeight:500,borderRadius:7,border:"none",background:"transparent",color:T.textSub,padding:"6px 8px",fontSize:13,...style}}>{children}</button>;}
-function Card({T,style,children}){return <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:22,...style}}>{children}</div>;}
+function BtnP({T,style,children,onMouseEnter,onMouseLeave,...p}){
+  return <button {...p}
+    onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.boxShadow="0 8px 18px rgba(0,0,0,.12)";onMouseEnter&&onMouseEnter(e);}}
+    onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none";onMouseLeave&&onMouseLeave(e);}}
+    style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,cursor:"pointer",fontWeight:600,borderRadius:8,border:"none",background:T.accent,color:T.accentInv,padding:"10px 20px",fontSize:13,transition:"transform .16s ease, box-shadow .16s ease",...style}}>
+    {children}
+  </button>;
+}
+function BtnO({T,style,children,onMouseEnter,onMouseLeave,...p}){
+  return <button {...p}
+    onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.boxShadow="0 6px 14px rgba(0,0,0,.08)";onMouseEnter&&onMouseEnter(e);}}
+    onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none";onMouseLeave&&onMouseLeave(e);}}
+    style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,cursor:"pointer",fontWeight:500,borderRadius:8,border:`1px solid ${T.border2}`,background:"transparent",color:T.text,padding:"9px 16px",fontSize:13,transition:"transform .16s ease, box-shadow .16s ease",...style}}>
+    {children}
+  </button>;
+}
+function BtnG({T,style,children,onMouseEnter,onMouseLeave,...p}){
+  return <button {...p}
+    onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-1px)";onMouseEnter&&onMouseEnter(e);}}
+    onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";onMouseLeave&&onMouseLeave(e);}}
+    style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer",fontWeight:500,borderRadius:7,border:"none",background:"transparent",color:T.textSub,padding:"6px 8px",fontSize:13,transition:"transform .16s ease",...style}}>
+    {children}
+  </button>;
+}
+function Card({T,style,children}){return <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:22,boxShadow:"0 10px 30px rgba(0,0,0,.06)",transition:"border-color .18s ease, box-shadow .18s ease, transform .18s ease",animation:"fadeInUp .26s ease",...style}}>{children}</div>;}
 function TH({children,center,T}){return <th style={{padding:"9px 14px",textAlign:center?"center":"right",fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:T.textMuted,borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>{children}</th>;}
 function TD({children,bold,center,color,T}){return <td style={{padding:"12px 14px",fontSize:13,fontWeight:bold?600:400,color:color||(bold?T.text:T.textSub),textAlign:center?"center":"right",borderBottom:`1px solid ${T.border}`}}>{children}</td>;}
 function Divider({T}){return <div style={{height:1,background:T.border,margin:"20px 0"}}/>;}
@@ -256,11 +407,13 @@ function InfoCard({T,name,icon,details}){
   return <Card T={T} style={{marginBottom:22}}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}><div style={{width:42,height:42,borderRadius:10,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center"}}><Ic n={icon||"user"} size={20} color={T.textSub}/></div><div style={{fontWeight:800,fontSize:17}}>{name}</div></div><div style={{display:"flex",flexWrap:"wrap",gap:"6px 28px"}}>{details.map((d,i)=><span key={i} style={{fontSize:12,color:T.textSub,display:"flex",alignItems:"center",gap:5}}>{d.icon&&<Ic n={d.icon} size={12} color={T.textMuted}/>}{d.label&&<span style={{fontWeight:600,color:T.textMuted,fontSize:11,textTransform:"uppercase",letterSpacing:"0.05em"}}>{d.label}:</span>}{d.value}</span>)}</div></Card>;
 }
 
-function PageShell({T,t,themeMode,onThemeChange,lang,onToggleLang,onBack,title,icon,children,rightEl,sync}){
+function PageShell({T,t,themeMode,onThemeChange,lang,onToggleLang,onBack,title,icon,children,rightEl,sync,wide=false}){
+  const isMobile=useIsMobile();
+  const shellW=isMobile?"100%":wide?"min(1680px, calc(100vw - 36px))":"1020px";
   return <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",direction:t.dir}}>
-    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}} *{box-sizing:border-box}`}</style>
-    <div style={{padding:"18px 28px",borderBottom:`1px solid ${T.border}`,background:T.card,position:"sticky",top:0,zIndex:50}}>
-      <div style={{maxWidth:1020,margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes fadeInUp{0%{opacity:0;transform:translateY(5px)}100%{opacity:1;transform:translateY(0)}}@keyframes popIn{0%{opacity:0;transform:scale(.985)}100%{opacity:1;transform:scale(1)}}@keyframes fadeOverlay{0%{opacity:0}100%{opacity:1}} *{box-sizing:border-box}`}</style>
+    <div style={{padding:isMobile?"12px 14px":"16px 20px",borderBottom:`1px solid ${T.border}`,background:T.card,position:"sticky",top:0,zIndex:50,backdropFilter:"saturate(120%) blur(4px)"}}>
+      <div style={{maxWidth:shellW,margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:isMobile?"flex-start":"center",gap:12,flexWrap:isMobile?"wrap":"nowrap"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           {onBack&&<BtnG T={T} onClick={onBack}><Ic n={t.dir==="rtl"?"fwd":"back"} size={16} color={T.textSub}/></BtnG>}
           <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -268,7 +421,7 @@ function PageShell({T,t,themeMode,onThemeChange,lang,onToggleLang,onBack,title,i
             <span style={{fontSize:18,fontWeight:800}}>{title}</span>
           </div>
         </div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:isMobile?"wrap":"nowrap"}}>
           <SyncBadge s={sync} T={T}/>
           {rightEl}
           <LangToggle lang={lang} onToggle={onToggleLang} T={T}/>
@@ -276,25 +429,54 @@ function PageShell({T,t,themeMode,onThemeChange,lang,onToggleLang,onBack,title,i
         </div>
       </div>
     </div>
-    <div style={{maxWidth:1020,margin:"0 auto",padding:"28px 28px"}}>{children}</div>
+    <div style={{maxWidth:shellW,margin:"0 auto",padding:isMobile?"16px 14px calc(22px + env(safe-area-inset-bottom))":"24px 20px 28px"}}>{children}</div>
   </div>;
 }
 
 // ── Attendance Calendar ───────────────────────────────────────────────────────
-function AttendanceCalendar({T,t,editable=false,onSave,students=null,initAtt:iA=null}){
+function AttendanceCalendar({T,t,editable=false,onSave,students=null,initAtt:iA=null,subjectKey=null,showStudentSelector=true}){
   const[selIdx,setSelIdx]=useState(MONTHS.length-1);
   const[selSid,setSelSid]=useState(students?.[0]?.id??null);
   const[ov,setOv]=useState({});
   const base=MONTHS[selIdx];
   const key=`${base.year}-${base.month}`;
-  const bData=selSid&&iA?(iA[selSid]?.[key]??{}):(base.data??{});
+  // For student-scoped calendars, default to month template so newly added students are editable immediately.
+  const bData=selSid&&iA?((iA[selSid]?.[key])??(base.data??{})):(base.data??{});
   const oData=selSid?(ov[selSid]?.[key]??{}):(ov["__all__"]?.[key]??{});
-  const dayData={...bData,...oData};
+  const rawData={...bData,...oData};
+  const normalizeDayValue=(v)=>{
+    if(subjectKey){
+      if(v&&typeof v==="object")return {...v};
+      if(typeof v==="boolean")return {[subjectKey]:v};
+      return {};
+    }
+    return v;
+  };
+  const scopedData=Object.fromEntries(Object.entries(rawData).map(([d,v])=>[d,normalizeDayValue(v)]));
+  const attVal=(v)=>{
+    if(subjectKey){
+      if(v&&typeof v==="object")return Boolean(v[subjectKey]);
+      return false;
+    }
+    if(typeof v==="boolean")return v;
+    if(v&&typeof v==="object")return Object.values(v).some(Boolean);
+    return false;
+  };
+  const dayData=Object.fromEntries(Object.entries(scopedData).map(([d,v])=>[d,attVal(v)]));
   const wdays=Object.keys(dayData).length;
   const pres=Object.values(dayData).filter(Boolean).length;
   const abs=wdays-pres;
   const pct=wdays?Math.round((pres/wdays)*100):0;
-  const toggle=d=>{if(!editable||!(d in dayData))return;const sid=selSid??"__all__";setOv(p=>({...p,[sid]:{...(p[sid]??{}),[key]:{...(p[sid]?.[key]??{}),[d]:!dayData[d]}}}));};
+  const toggle=(d,canEdit)=>{
+    if(!canEdit)return;
+    const sid=selSid??"__all__";
+    const current=scopedData[d];
+    const nextBool=!dayData[d];
+    const nextVal=subjectKey
+      ? (current&&typeof current==="object"?{...current,[subjectKey]:nextBool}:{[subjectKey]:nextBool})
+      : nextBool;
+    setOv(p=>({...p,[sid]:{...(p[sid]??{}),[key]:{...(p[sid]?.[key]??{}),[d]:nextVal}}}));
+  };
   const isDk=T.bg===DARK.bg;
   const pBg=isDk?"#122412":"#dcfce7",aBg=isDk?"#2a1212":"#fee2e2",wBg=T.surface;
   const ss=a=>({padding:"5px 12px",borderRadius:6,border:`1px solid ${a?T.accent:T.border}`,background:a?T.accent:"transparent",color:a?T.accentInv:T.textSub,cursor:"pointer",fontSize:11,fontWeight:600});
@@ -304,8 +486,8 @@ function AttendanceCalendar({T,t,editable=false,onSave,students=null,initAtt:iA=
   for(let i=0;i<firstDow;i++)cells.push({e:true});
   for(let d=1;d<=dim;d++){const dw=new Date(base.year,base.month,d).getDay();const we=dw===0||dw===6;const fut=new Date(base.year,base.month,d)>NOW;const tod=base.year===NOW.getFullYear()&&base.month===NOW.getMonth()&&d===NOW.getDate();cells.push({d,we,fut,tod,s:dayData[d]});}
   return <div>
-    {students&&students.length>0&&<div style={{marginBottom:18}}><Lbl T={T}>{t.selectStudent}</Lbl><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{students.map(s=><button key={s.id} onClick={()=>setSelSid(s.id)} style={ss(selSid===s.id)}>{s.name}</button>)}</div></div>}
-    <div style={{display:"flex",gap:5,marginBottom:18,flexWrap:"wrap"}}>{MONTHS.map((m,i)=><button key={i} onClick={()=>setSelIdx(i)} style={ss(i===selIdx)}>{t.months[m.month].slice(0,3)} {m.year}</button>)}</div>
+    {showStudentSelector&&students&&students.length>0&&<div style={{marginBottom:18}}><Lbl T={T}>{t.selectStudent}</Lbl><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{students.map(s=><button key={s.id} onClick={()=>setSelSid(s.id)} style={ss(selSid===s.id)}>{s.name}</button>)}</div></div>}
+    <div style={{display:"flex",gap:5,marginBottom:18,flexWrap:"wrap"}}>{MONTHS.map((m,i)=>{const mm=String(m.month+1).padStart(2,"0");const yyyy=String(m.year);return <button key={i} onClick={()=>setSelIdx(i)} style={ss(i===selIdx)}>{`${mm}/${yyyy}`}</button>;})}</div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:18}}>
       {[[t.present,pres,T.success,"check"],[t.absent,abs,T.danger,"alert"],[t.rate,`${pct}%`,pct>=90?T.success:pct>=75?T.warn:T.danger,"stats"]].map(([l,v,c,ic])=>
         <div key={l} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",textAlign:"center"}}>
@@ -321,8 +503,9 @@ function AttendanceCalendar({T,t,editable=false,onSave,students=null,initAtt:iA=
         if(c.e)return <div key={`e${i}`}/>;
         const{d,we,fut,tod,s}=c;
         let bg=wBg,tc=T.textMuted;
-        if(!we&&!fut){bg=s===true?pBg:aBg;tc=s===true?T.success:T.danger;}
-        return <div key={d} onClick={()=>!we&&!fut&&toggle(d)} style={{aspectRatio:"1",display:"flex",alignItems:"center",justifyContent:"center",borderRadius:7,background:bg,color:tc,fontSize:13,fontWeight:600,cursor:editable&&!we&&!fut?"pointer":"default",border:tod?`2px solid ${T.accent}`:"2px solid transparent",transition:"background .1s",userSelect:"none"}}>{d}</div>;
+        if((!we||tod)&&!fut){bg=s===true?pBg:aBg;tc=s===true?T.success:T.danger;}
+        const canEdit=editable&&!fut&&(!we||tod);
+        return <div key={d} onClick={()=>toggle(d,canEdit)} style={{aspectRatio:"1",display:"flex",alignItems:"center",justifyContent:"center",borderRadius:7,background:bg,color:tc,fontSize:13,fontWeight:600,cursor:canEdit?"pointer":"default",border:tod?`2px solid ${T.accent}`:"2px solid transparent",transition:"background .1s",userSelect:"none"}}>{d}</div>;
       })}
     </div>
     <div style={{marginTop:14,display:"flex",gap:18,flexWrap:"wrap",fontSize:12,color:T.textSub}}>
@@ -330,7 +513,7 @@ function AttendanceCalendar({T,t,editable=false,onSave,students=null,initAtt:iA=
     </div>
     {editable&&<div style={{marginTop:18,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <span style={{fontSize:12,color:T.textMuted}}>{t.clickToToggle}</span>
-      {onSave&&<BtnP T={T} onClick={()=>onSave(selSid,key,dayData)}><Ic n="save" size={14} color={T.accentInv}/>{t.saveAttendance}</BtnP>}
+      {onSave&&<BtnP T={T} onClick={()=>onSave(selSid,key,scopedData)}><Ic n="save" size={14} color={T.accentInv}/>{t.saveAttendance}</BtnP>}
     </div>}
   </div>;
 }
@@ -338,6 +521,7 @@ function AttendanceCalendar({T,t,editable=false,onSave,students=null,initAtt:iA=
 // ── Login ─────────────────────────────────────────────────────────────────────
 function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
   const T=getTheme(themeMode),t=TR[lang];
+  const isMobile=useIsMobile();
   const[email,setEmail]=useState("");
   const[pass,setPass]=useState("");
   const[keep,setKeep]=useState(false);
@@ -351,7 +535,21 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
         const sess=await sb.signIn(email,pass);
         if(!sess){setErr(t.invalidCreds);return;}
         const fallback=u||{name:email,role:null,metadata:{}};
-        const fromDb=(await sb.get("app_users",`?email=eq.${esc(email)}&select=name,role,phone,grade,subject,bus_number,route&limit=1`))?.[0];
+        let fromDb=(await sb.get("app_users",`?email=eq.${esc(email)}&select=name,role,phone,grade,subject,bus_number,route&limit=1`,sess.access_token||null))?.[0];
+        if(!fromDb&&u){
+          // Self-heal: if Auth exists but app_users row is missing, create it from local approved-login cache.
+          await sb.upsert("app_users",[{
+            email,
+            name:u.name||email,
+            role:u.role||"student",
+            phone:u.metadata?.phone||null,
+            grade:u.metadata?.grade||null,
+            subject:u.metadata?.subject||null,
+            bus_number:u.metadata?.busNumber||null,
+            route:u.metadata?.route||null,
+          }],sess.access_token||null);
+          fromDb=(await sb.get("app_users",`?email=eq.${esc(email)}&select=name,role,phone,grade,subject,bus_number,route&limit=1`,sess.access_token||null))?.[0];
+        }
         const dbUser=fromDb?{
           name:fromDb.name||fallback.name||email,
           role:fromDb.role||fallback.role,
@@ -365,7 +563,7 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
           },
         }:null;
         if(!dbUser&&!u){setErr(t.accessDenied);return;}
-        onLogin({email,...(dbUser||u)},keep);
+        onLogin({email,...(dbUser||u),accessToken:sess.access_token||null,refreshToken:sess.refresh_token||null},keep);
         return;
       }
       if(!u){setErr(t.accessDenied);return;}
@@ -374,8 +572,21 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
       else{setErr(t.invalidCreds);}
     }finally{setLoading(false);}
   };
-  return <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",padding:20,direction:t.dir}}>
-    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}} input::placeholder{color:${T.textMuted}} *{box-sizing:border-box}`}</style>
+  const deco=[
+    {icon:"book",x:"8%",y:"18%",d:0},
+    {icon:"teacher",x:"88%",y:"20%",d:1.2},
+    {icon:"student",x:"10%",y:"74%",d:2.1},
+    {icon:"grades",x:"86%",y:"72%",d:3.2},
+    {icon:"attend",x:"50%",y:"10%",d:1.8},
+    {icon:"clock",x:"50%",y:"87%",d:2.7},
+  ];
+  return <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",padding:20,direction:t.dir,position:"relative",overflow:"hidden"}}>
+    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes fadeInUp{0%{opacity:0;transform:translateY(5px)}100%{opacity:1;transform:translateY(0)}}@keyframes popIn{0%{opacity:0;transform:scale(.985)}100%{opacity:1;transform:scale(1)}}@keyframes fadeOverlay{0%{opacity:0}100%{opacity:1}}@keyframes floatSoft{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}} input::placeholder{color:${T.textMuted}} *{box-sizing:border-box}`}</style>
+    {!isMobile&&deco.map((d,i)=><div key={`${themeMode}-${d.icon}-${i}`}
+      onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-5px) scale(1.05)";e.currentTarget.style.boxShadow="0 14px 32px rgba(0,0,0,.18)";}}
+      onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0) scale(1)";e.currentTarget.style.boxShadow="0 10px 30px rgba(0,0,0,.12)";}}
+      style={{position:"absolute",left:d.x,top:d.y,width:58,height:58,borderRadius:14,background:`${T.card}cc`,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 10px 30px rgba(0,0,0,.12)",backdropFilter:"blur(4px)",animation:`floatSoft ${4.8+i*0.5}s ease-in-out ${d.d}s infinite`,transition:"transform .18s ease, box-shadow .18s ease",cursor:"pointer"}}><Ic n={d.icon} size={26} color={themeMode==="dark"?"#a3a3a3":themeMode==="leaf"?"#5f6f83":"#7b8798"}/></div>)}
+    <div style={{position:"absolute",inset:0,background:`radial-gradient(circle at 20% 20%, ${T.accent}10 0%, transparent 35%), radial-gradient(circle at 80% 75%, ${T.success}12 0%, transparent 30%)`,pointerEvents:"none"}}/>
     <div style={{position:"fixed",top:20,left:t.dir==="rtl"?20:"auto",right:t.dir==="rtl"?"auto":20,display:"flex",gap:8}}>
       <LangToggle lang={lang} onToggle={onToggleLang} T={T}/>
       <ThemeTabs themeMode={themeMode} onChange={onThemeChange} T={T} t={t}/>
@@ -401,16 +612,18 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
 // ── Home ──────────────────────────────────────────────────────────────────────
 function Home({user,onNavigate,onSignOut,themeMode,onThemeChange,lang,onToggleLang}){
   const T=getTheme(themeMode),t=TR[lang];
+  const isMobile=useIsMobile();
   const portals=[
     {role:["admin"],              path:"admin",     title:t.admin,     sub:t.schoolOps,    icon:"admin"},
     {role:["teacher","admin"],    path:"teacher",   title:t.teacher,   sub:t.classAttend,  icon:"teacher"},
     {role:["student","admin"],    path:"student",   title:t.student,   sub:t.gradesAttend, icon:"student"},
+    {role:["accountant","admin"], path:"accountant",title:t.accountant,sub:t.schoolOps,    icon:"stats"},
     {role:["bus_driver","admin"], path:"bus-driver",title:t.busDriver, sub:t.routesGps,    icon:"bus"},
   ].filter(p=>p.role.includes(user.role));
   return <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",direction:t.dir}}>
-    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}} *{box-sizing:border-box}`}</style>
-    <div style={{padding:"18px 28px",borderBottom:`1px solid ${T.border}`,background:T.card}}>
-      <div style={{maxWidth:900,margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes fadeInUp{0%{opacity:0;transform:translateY(5px)}100%{opacity:1;transform:translateY(0)}}@keyframes popIn{0%{opacity:0;transform:scale(.985)}100%{opacity:1;transform:scale(1)}}@keyframes fadeOverlay{0%{opacity:0}100%{opacity:1}} *{box-sizing:border-box}`}</style>
+    <div style={{padding:isMobile?"12px 14px":"18px 28px",borderBottom:`1px solid ${T.border}`,background:T.card}}>
+      <div style={{maxWidth:isMobile?900:"min(1780px, calc(100vw - 56px))",margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{width:36,height:36,borderRadius:9,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center"}}><Ic n="book" size={18} color={T.textSub}/></div>
           <div><div style={{fontSize:16,fontWeight:800}}>{t.appName}</div><div style={{fontSize:11,color:T.textSub}}>{t.welcome} {user.name}</div></div>
@@ -422,12 +635,12 @@ function Home({user,onNavigate,onSignOut,themeMode,onThemeChange,lang,onToggleLa
         </div>
       </div>
     </div>
-    <div style={{maxWidth:900,margin:"0 auto",padding:"40px 28px"}}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
-        {portals.map(p=><div key={p.path} onClick={()=>onNavigate(p.path)} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:22,cursor:"pointer",transition:"all .15s"}} onMouseEnter={el=>{el.currentTarget.style.borderColor=T.accent;el.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={el=>{el.currentTarget.style.borderColor=T.border;el.currentTarget.style.transform="translateY(0)";}}>
-          <div style={{width:40,height:40,borderRadius:10,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:14}}><Ic n={p.icon} size={20} color={T.textSub}/></div>
-          <div style={{fontSize:14,fontWeight:800,marginBottom:4}}>{p.title}</div>
-          <div style={{fontSize:12,color:T.textSub,marginBottom:18}}>{p.sub}</div>
+    <div style={{maxWidth:isMobile?900:"min(1780px, calc(100vw - 56px))",margin:"0 auto",padding:isMobile?"20px 14px":"30px 10px 24px"}}>
+      <div style={{display:"grid",gridTemplateColumns:`repeat(auto-fill,minmax(${isMobile?170:320}px,1fr))`,gap:isMobile?12:18,minHeight:isMobile?"auto":"calc(100vh - 170px)"}}>
+        {portals.map(p=><div key={p.path} onClick={()=>onNavigate(p.path)} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:isMobile?20:30,cursor:"pointer",transition:"all .16s",minHeight:isMobile?170:260,display:"flex",flexDirection:"column",justifyContent:"space-between"}} onMouseEnter={el=>{el.currentTarget.style.borderColor=T.accent;el.currentTarget.style.transform="translateY(-3px)";el.currentTarget.style.boxShadow="0 14px 30px rgba(0,0,0,.10)";}} onMouseLeave={el=>{el.currentTarget.style.borderColor=T.border;el.currentTarget.style.transform="translateY(0)";el.currentTarget.style.boxShadow="none";}}>
+          <div style={{width:isMobile?44:56,height:isMobile?44:56,borderRadius:12,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:14}}><Ic n={p.icon} size={isMobile?22:28} color={T.textSub}/></div>
+          <div style={{fontSize:isMobile?16:21,fontWeight:800,marginBottom:6}}>{p.title}</div>
+          <div style={{fontSize:isMobile?13:15,color:T.textSub,marginBottom:18}}>{p.sub}</div>
           <div style={{fontSize:12,color:T.textMuted,display:"flex",alignItems:"center",gap:5}}><Ic n="fwd" size={12} color={T.textMuted}/>{t.access}</div>
         </div>)}
       </div>
@@ -436,10 +649,12 @@ function Home({user,onNavigate,onSignOut,themeMode,onThemeChange,lang,onToggleLa
 }
 
 // ── Admin Dashboard ───────────────────────────────────────────────────────────
-function AdminDashboard({onBack,themeMode,onThemeChange,lang,onToggleLang,creds,onCredsChange,gradePeriods,onPeriodsChange,studentGrades,onStudentGradesChange,subjects,onSubjectsChange}){
+function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,creds,onCredsChange,gradePeriods,onPeriodsChange,studentGrades,onStudentGradesChange,subjects,onSubjectsChange}){
   const T=getTheme(themeMode),t=TR[lang],dir=t.dir;
+  const isMobile=useIsMobile();
   const[students,setStudents]=useState(DEMO_STUDENTS);
   const[teachers,setTeachers]=useState(DEMO_TEACHERS);
+  const[accountants,setAccountants]=useState(DEMO_ACCOUNTANTS);
   const[modal,setModal]=useState(null);
   const[toast,setToast]=useState("");
   const[sync,setSync]=useState(null);
@@ -447,47 +662,111 @@ function AdminDashboard({onBack,themeMode,onThemeChange,lang,onToggleLang,creds,
   const SKEYS=subjects.map(s=>s.id);
   const blank=()=>Object.fromEntries(SKEYS.map(s=>[s,0]));
   const blankP=()=>Object.fromEntries(gradePeriods.map(p=>[p.id,blank()]));
-  const[ns,setNs]=useState({name:"",email:"",phone:"",grade:t.grades1to12[0]});
+  const[ns,setNs]=useState({name:"",email:"",phone:"",grade:t.grades1to12[0],tuition_total:0,tuition_paid:0});
   const[nsG,setNsG]=useState(()=>blankP());
+  const[nsCred,setNsCred]=useState({enabled:true,password:""});
   const[nt,setNt]=useState({name:"",email:"",phone:"",subject:subjects[0]?.id||"math",grade:t.grades1to12[0]});
+  const[ntCred,setNtCred]=useState({enabled:true,password:""});
+  const[na,setNa]=useState({name:"",email:"",phone:""});
+  const[naCred,setNaCred]=useState({enabled:true,password:""});
   const[nc,setNc]=useState({email:"",password:"",name:"",role:"teacher",phone:""});
   const[np,setNp]=useState("");
   const[newSubj,setNewSubj]=useState({label_ar:"",label_en:""});
+  const[editCred,setEditCred]=useState(null);
+  const[editStudent,setEditStudent]=useState(null);
+  const[editTeacher,setEditTeacher]=useState(null);
+  const[editAccountant,setEditAccountant]=useState(null);
+  const[editStudentLogin,setEditStudentLogin]=useState({has:false,create:false,password:""});
+  const[editTeacherLogin,setEditTeacherLogin]=useState({has:false,create:false,password:""});
+  const[editAccountantLogin,setEditAccountantLogin]=useState({has:false,create:false,password:""});
 
   useEffect(()=>{
     async function load(){
-      const[dS,dT,dSub]=await Promise.all([
+      const[dS,dT,dA,dSub,dUsers,dPeriods]=await Promise.all([
         sb.get("students","?order=created_at.asc"),
         sb.get("teachers","?order=created_at.asc"),
+        sb.get("accountants","?order=created_at.asc"),
         sb.get("subjects","?order=created_at.asc"),
+        sb.get("app_users","?select=email,name,role,phone,grade,subject,bus_number,route&order=created_at.asc",user?.accessToken||null),
+        sb.get("grade_periods","?order=created_at.asc"),
       ]);
-      if(dS&&dS.length>0){setStudents(dS.map(s=>({id:s.id,name:s.name,email:s.email,grade:s.grade,phone:s.phone||""})));setSync("ok");}
+      if(dS&&dS.length>0){setStudents(dS.map(s=>({id:s.id,name:s.name,email:s.email,grade:s.grade,phone:s.phone||"",tuition_total:Number(s.tuition_total||0),tuition_paid:Number(s.tuition_paid||0)})));setSync("ok");}
       else if(dS===null){setSync("fail");}
-      if(dT&&dT.length>0){setTeachers(dT.map(t=>({id:t.id,name:t.name,email:t.email,subject:t.subject,subjectDisplay:t.subject_display||t.subject,phone:t.phone||""})));}
+      if(dT&&dT.length>0){setTeachers(dT.map(t=>({id:t.id,name:t.name,email:t.email,subject:t.subject,subjectDisplay:t.subject_display||t.subject,grade:t.grade||"",phone:t.phone||""})));}
+      if(dA&&dA.length>0){setAccountants(dA.map(a=>({id:a.id,name:a.name,email:a.email,phone:a.phone||""})));}
       if(dSub&&dSub.length>0){onSubjectsChange(dSub.map(s=>({id:s.id,label_ar:s.label_ar,label_en:s.label_en})));}
+      if(dUsers&&dUsers.length>0){
+        const mapped=Object.fromEntries(dUsers.map(u=>[u.email,{
+          name:u.name||u.email,
+          role:u.role||"teacher",
+          metadata:{
+            phone:u.phone||"",
+            grade:u.grade||null,
+            subject:u.subject||null,
+            busNumber:u.bus_number||null,
+            route:u.route||null,
+          }
+        }]));
+        onCredsChange(mapped);
+      }
+      if(dPeriods&&dPeriods.length>0){
+        onPeriodsChange(dPeriods.map(p=>({id:p.id,label:p.label})));
+      }
     }
     load();
   },[]);
 
   const addStudent=async()=>{
     if(!ns.name||!ns.email)return;
+    const email=String(ns.email).trim().toLowerCase();
+    if(nsCred.enabled){
+      const okAuth=await createAuthForApprovedLogin({email,password:nsCred.password,name:ns.name,role:"student",phone:ns.phone||"",grade:ns.grade||null});
+      if(!okAuth)return;
+      onCredsChange(prev=>({...prev,[email]:{name:ns.name,role:"student",metadata:{phone:ns.phone||"",grade:ns.grade||null}}}));
+    }
     const id=`s${Date.now()}`;
-    const newS={...ns,id};
+    const newS={...ns,email,id};
     setStudents(p=>[...p,newS]);
     onStudentGradesChange(prev=>({...prev,[id]:nsG}));
-    setNs({name:"",email:"",phone:"",grade:t.grades1to12[0]});
+    setNs({name:"",email:"",phone:"",grade:t.grades1to12[0],tuition_total:0,tuition_paid:0});
+    setNsCred({enabled:true,password:""});
     setNsG(blankP()); setModal(null); setToast(t.studentAdded);
-    const ok=await sb.upsert("students",[{id,name:newS.name,email:newS.email,grade:newS.grade,phone:newS.phone||null}]);
+    const ok=await sb.upsert("students",[{id,name:newS.name,email:newS.email,grade:newS.grade,phone:newS.phone||null,tuition_total:Number(newS.tuition_total||0),tuition_paid:Number(newS.tuition_paid||0)}]);
+    if(nsCred.enabled||creds[newS.email]){
+      await sb.upsert("app_users",[{
+        email:newS.email,
+        name:newS.name,
+        role:"student",
+        phone:newS.phone||null,
+        grade:newS.grade||null,
+      }],user?.accessToken||null);
+    }
     setSync(ok?"ok":"fail");
   };
   const addTeacher=async()=>{
     if(!nt.name||!nt.email||!nt.subject)return;
+    const email=String(nt.email).trim().toLowerCase();
+    if(ntCred.enabled){
+      const okAuth=await createAuthForApprovedLogin({email,password:ntCred.password,name:nt.name,role:"teacher",phone:nt.phone||"",grade:nt.grade||null,subject:nt.subject||null});
+      if(!okAuth)return;
+      onCredsChange(prev=>({...prev,[email]:{name:nt.name,role:"teacher",metadata:{phone:nt.phone||"",subject:nt.subject||null}}}));
+    }
     const sl=SLABELS[SKEYS.indexOf(nt.subject)]||nt.subject;
     const id=`t${Date.now()}`;
-    const newT={...nt,id,subjectDisplay:sl};
+    const newT={...nt,email,id,subjectDisplay:sl};
     setTeachers(p=>[...p,newT]);
-    setNt({name:"",email:"",phone:"",subject:subjects[0]?.id||"math",grade:t.grades1to12[0]});setModal(null);setToast(t.teacherAdded);
+    setNt({name:"",email:"",phone:"",subject:subjects[0]?.id||"math",grade:t.grades1to12[0]});setNtCred({enabled:true,password:""});setModal(null);setToast(t.teacherAdded);
     const ok=await sb.upsert("teachers",[{id,name:newT.name,email:newT.email,subject:newT.subject,subject_display:sl,grade:newT.grade,phone:newT.phone||null}]);
+    if(ntCred.enabled||creds[newT.email]){
+      await sb.upsert("app_users",[{
+        email:newT.email,
+        name:newT.name,
+        role:"teacher",
+        phone:newT.phone||null,
+        grade:newT.grade||null,
+        subject:newT.subject||null,
+      }],user?.accessToken||null);
+    }
     setSync(ok?"ok":"fail");
   };
   const addSubject=async()=>{
@@ -505,22 +784,407 @@ function AdminDashboard({onBack,themeMode,onThemeChange,lang,onToggleLang,creds,
     const ok=await sb.del("subjects",{id});
     setSync(ok?"ok":"fail");
   };
-  const addCred=()=>{
-    if(!nc.email||!nc.name)return;
-    if(!SB_READY&&!nc.password)return;
-    if(!SB_READY&&nc.password){DEMO_PASSWORDS[nc.email]=nc.password;}
-    onCredsChange({...creds,[nc.email]:{name:nc.name,role:nc.role,metadata:{phone:nc.phone}}});
+  const createAuthForApprovedLogin=async({email,password,name,role,phone,grade=null,subject=null,busNumber=null,route=null})=>{
+    const emailNorm=String(email||"").trim().toLowerCase();
+    if(!emailNorm){
+      setToast(`!${t.invalidCreds}`);
+      setSync("fail");
+      return false;
+    }
+    if(!password){
+      setToast(`!${t.loginPwdRequired}`);
+      setSync("fail");
+      return false;
+    }
+    if(SB_READY){
+      if(!user?.accessToken){
+        setToast("!Admin session expired. Please sign in again.");
+        setSync("fail");
+        return false;
+      }
+      const auth=await sb.adminCreateUser({
+        email:emailNorm,password,name,role,
+        phone:phone||null,
+        grade:grade||null,
+        subject:subject||null,
+        bus_number:busNumber||null,
+        route:route||null
+      },user.accessToken);
+      if(auth.ok&&auth?.data?.alreadyExists){
+        setToast(`!${t.authExistsPwdNotChanged}`);
+        setSync("fail");
+        return false;
+      }
+      if(!auth.ok){
+        let recovered=false;
+        if(auth.status===404){
+          const fallback=await sb.signUp(emailNorm,password);
+          if(fallback?.alreadyExists){
+            setToast(`!${t.authExistsPwdNotChanged}`);
+            setSync("fail");
+            return false;
+          }
+          if(!fallback.ok){
+            setToast("!Backend route /api/admin-create-user is missing.");
+            setSync("fail");
+            return false;
+          }
+          recovered=true;
+        }else if((auth.status===0) && (IS_LOCAL_DEV||IS_DEV)){
+          const fallback=await sb.signUp(emailNorm,password);
+          if(fallback?.alreadyExists){
+            setToast(`!${t.authExistsPwdNotChanged}`);
+            setSync("fail");
+            return false;
+          }
+          if(!fallback.ok){
+            const msg=String(fallback.error||"local signup fallback failed").replaceAll("_"," ").slice(0,120);
+            setToast(`!Auth create failed: ${msg}`);
+            setSync("fail");
+            return false;
+          }
+          recovered=true;
+        }else if(auth.status===0){
+          setToast("!Auth create failed: backend unreachable (status 0).");
+          setSync("fail");
+          return false;
+        }
+        if(!recovered){
+          const err=auth?.data?.error||auth?.data?.details?.error||auth?.data?.details?.msg||`backend user create failed (status ${auth.status})`;
+          const msg=String(err).replaceAll("_"," ").slice(0,120);
+          setToast(`!Auth create failed: ${msg}`);
+          setSync("fail");
+          return false;
+        }
+      }
+    }else{
+      DEMO_PASSWORDS[emailNorm]=password;
+    }
+    return true;
+  };
+  const addCred=async()=>{
+    if(!nc.email||!nc.name||!nc.password)return;
+    const email=String(nc.email).trim().toLowerCase();
+    const okAuth=await createAuthForApprovedLogin({email,password:nc.password,name:nc.name,role:nc.role,phone:nc.phone||""});
+    if(!okAuth)return;
+    onCredsChange(prev=>({...prev,[email]:{name:nc.name,role:nc.role,metadata:{phone:nc.phone}}}));
     setNc({email:"",password:"",name:"",role:"teacher",phone:""});
     setModal(null);setToast(t.credAdded);
+    const ok=await sb.upsert("app_users",[{email,name:nc.name,role:nc.role,phone:nc.phone||null}],user?.accessToken||null);
+    setSync(ok?"ok":"fail");
   };
-  const addPeriod=()=>{if(!np.trim())return;const id=`p${Date.now()}`;onPeriodsChange(prev=>[...prev,{id,label:np.trim()}]);onStudentGradesChange(prev=>{const u={...prev};Object.keys(u).forEach(sid=>{u[sid]={...u[sid],[id]:blank()};});return u;});setNp("");setToast(t.periodAdded);};
-  const delPeriod=pid=>{onPeriodsChange(prev=>prev.filter(p=>p.id!==pid));onStudentGradesChange(prev=>{const u={...prev};Object.keys(u).forEach(sid=>{const g={...u[sid]};delete g[pid];u[sid]=g;});return u;});setToast(t.periodDeleted);};
-  const delCred=email=>{if(email==="admin@school.edu")return;const u={...creds};delete u[email];onCredsChange(u);setToast(t.credDeleted);};
+  const addPeriod=async()=>{
+    if(!np.trim())return;
+    const id=`p${Date.now()}`;
+    const label=np.trim();
+    onPeriodsChange(prev=>[...prev,{id,label}]);
+    onStudentGradesChange(prev=>{const u={...prev};Object.keys(u).forEach(sid=>{u[sid]={...u[sid],[id]:blank()};});return u;});
+    setNp("");setToast(t.periodAdded);
+    const ok=await sb.upsert("grade_periods",[{id,label}]);
+    setSync(ok?"ok":"fail");
+  };
+  const delPeriod=async pid=>{
+    onPeriodsChange(prev=>prev.filter(p=>p.id!==pid));
+    onStudentGradesChange(prev=>{const u={...prev};Object.keys(u).forEach(sid=>{const g={...u[sid]};delete g[pid];u[sid]=g;});return u;});
+    setToast(t.periodDeleted);
+    const ok=await sb.del("grade_periods",{id:pid});
+    setSync(ok?"ok":"fail");
+  };
+  const delStudent=async s=>{
+    setStudents(prev=>prev.filter(x=>x.id!==s.id));
+    const ok=await sb.del("students",{id:s.id});
+    await sb.del("app_users",{email:s.email},user?.accessToken||null);
+    onCredsChange(prev=>{const u={...prev};delete u[s.email];return u;});
+    setSync(ok?"ok":"fail");
+  };
+  const delTeacher=async tt=>{
+    setTeachers(prev=>prev.filter(x=>x.id!==tt.id));
+    const ok=await sb.del("teachers",{id:tt.id});
+    await sb.del("app_users",{email:tt.email},user?.accessToken||null);
+    onCredsChange(prev=>{const u={...prev};delete u[tt.email];return u;});
+    setSync(ok?"ok":"fail");
+  };
+  const addAccountant=async()=>{
+    if(!na.name||!na.email)return;
+    const email=String(na.email).trim().toLowerCase();
+    if(naCred.enabled){
+      const okAuth=await createAuthForApprovedLogin({email,password:naCred.password,name:na.name,role:"accountant",phone:na.phone||""});
+      if(!okAuth)return;
+      onCredsChange(prev=>({...prev,[email]:{name:na.name,role:"accountant",metadata:{phone:na.phone||""}}}));
+    }
+    const id=`a${Date.now()}`;
+    const row={id,name:na.name,email,phone:na.phone||""};
+    setAccountants(prev=>[...prev,row]);
+    setNa({name:"",email:"",phone:""});
+    setNaCred({enabled:true,password:""});
+    setModal(null);
+    const ok=await sb.upsert("accountants",[{id:row.id,name:row.name,email:row.email,phone:row.phone||null}],user?.accessToken||null);
+    await sb.upsert("app_users",[{email:row.email,name:row.name,role:"accountant",phone:row.phone||null}],user?.accessToken||null);
+    setSync(ok?"ok":"fail");
+  };
+  const openEditAccountant=a=>{
+    setEditAccountant({...a});
+    const has=Boolean(creds[a.email]);
+    setEditAccountantLogin({has,create:false,password:""});
+    setModal("edit-accountant");
+  };
+  const saveEditAccountant=async()=>{
+    if(!editAccountant?.id||!editAccountant?.name||!editAccountant?.email)return;
+    const email=String(editAccountant.email).trim().toLowerCase();
+    const old=accountants.find(a=>a.id===editAccountant.id);
+    if(!old)return;
+    if(old.email!==email && creds[old.email]){
+      setToast(`!${t.linkedLoginEmailChangeBlocked}`);
+      return;
+    }
+    if(!editAccountantLogin.has&&editAccountantLogin.create){
+      const okAuth=await createAuthForApprovedLogin({
+        email,
+        password:editAccountantLogin.password,
+        name:editAccountant.name,
+        role:"accountant",
+        phone:editAccountant.phone||"",
+      });
+      if(!okAuth)return;
+      onCredsChange(prev=>({
+        ...prev,
+        [email]:{name:editAccountant.name,role:"accountant",metadata:{phone:editAccountant.phone||""}}
+      }));
+    }else if(editAccountantLogin.has){
+      onCredsChange(prev=>({
+        ...prev,
+        [email]:{
+          ...(prev[email]||{}),
+          name:editAccountant.name,
+          role:"accountant",
+          metadata:{...((prev[email]?.metadata)||{}),phone:editAccountant.phone||""},
+        }
+      }));
+    }
+    setAccountants(prev=>prev.map(a=>a.id===editAccountant.id?{...a,...editAccountant,email}:a));
+    const okAcc=await sb.upsert("accountants",[{
+      id:editAccountant.id,
+      name:editAccountant.name,
+      email,
+      phone:editAccountant.phone||null,
+    }],user?.accessToken||null);
+    if(old.email!==email){
+      await sb.del("app_users",{email:old.email},user?.accessToken||null);
+    }
+    const okUser=await sb.upsert("app_users",[{
+      email,
+      name:editAccountant.name,
+      role:"accountant",
+      phone:editAccountant.phone||null,
+    }],user?.accessToken||null);
+    if(old.email!==email){
+      onCredsChange(prev=>{
+        const next={...prev};
+        if(next[old.email]&&!next[email]){
+          next[email]={...next[old.email]};
+        }
+        delete next[old.email];
+        return next;
+      });
+    }
+    setSync(okAcc&&okUser?"ok":"fail");
+    setToast(t.changesSaved);
+    setModal(null);
+    setEditAccountant(null);
+    setEditAccountantLogin({has:false,create:false,password:""});
+  };
+  const delAccountant=async a=>{
+    setAccountants(prev=>prev.filter(x=>x.id!==a.id));
+    const okAcc=await sb.del("accountants",{id:a.id},user?.accessToken||null);
+    await sb.del("app_users",{email:a.email},user?.accessToken||null);
+    onCredsChange(prev=>{const u={...prev};delete u[a.email];return u;});
+    setSync(okAcc?"ok":"fail");
+  };
+  const delCred=async email=>{
+    if(email==="admin@school.edu")return;
+    const u={...creds};delete u[email];onCredsChange(u);setToast(t.credDeleted);
+    const ok=await sb.del("app_users",{email},user?.accessToken||null);
+    setSync(ok?"ok":"fail");
+  };
+  const openEditCred=email=>{
+    const u=creds[email];
+    if(!u)return;
+    setEditCred({
+      email,
+      name:u.name||"",
+      role:u.role||"teacher",
+      phone:u.metadata?.phone||"",
+    });
+    setModal("edit-cred");
+  };
+  const saveEditCred=async()=>{
+    if(!editCred?.email||!editCred?.name)return;
+    const prev=creds[editCred.email]||{metadata:{}};
+    onCredsChange(p=>({
+      ...p,
+      [editCred.email]:{
+        ...prev,
+        name:editCred.name,
+        role:editCred.role,
+        metadata:{...(prev.metadata||{}),phone:editCred.phone||""},
+      }
+    }));
+    const ok=await sb.upsert("app_users",[{
+      email:editCred.email,
+      name:editCred.name,
+      role:editCred.role,
+      phone:editCred.phone||null,
+    }],user?.accessToken||null);
+    setSync(ok?"ok":"fail");
+    setToast(t.changesSaved);
+    setModal(null);
+    setEditCred(null);
+  };
+  const openEditStudent=s=>{
+    setEditStudent({...s});
+    const has=Boolean(creds[s.email]);
+    setEditStudentLogin({has,create:false,password:""});
+    setModal("edit-student");
+  };
+  const saveEditStudent=async()=>{
+    if(!editStudent?.id||!editStudent?.name||!editStudent?.email)return;
+    const email=String(editStudent.email).trim().toLowerCase();
+    const old=students.find(s=>s.id===editStudent.id);
+    if(!old)return;
+    if(old.email!==email && creds[old.email]){
+      setToast(`!${t.linkedLoginEmailChangeBlocked}`);
+      return;
+    }
+    if(!editStudentLogin.has&&editStudentLogin.create){
+      const okAuth=await createAuthForApprovedLogin({
+        email,
+        password:editStudentLogin.password,
+        name:editStudent.name,
+        role:"student",
+        phone:editStudent.phone||"",
+        grade:editStudent.grade||null,
+      });
+      if(!okAuth)return;
+      onCredsChange(prev=>({...prev,[email]:{name:editStudent.name,role:"student",metadata:{phone:editStudent.phone||"",grade:editStudent.grade||null}}}));
+      const okUser=await sb.upsert("app_users",[{
+        email,
+        name:editStudent.name,
+        role:"student",
+        phone:editStudent.phone||null,
+        grade:editStudent.grade||null,
+      }],user?.accessToken||null);
+      setSync(okUser?"ok":"fail");
+    }else if(editStudentLogin.has){
+      onCredsChange(prev=>({
+        ...prev,
+        [email]:{
+          ...(prev[email]||{}),
+          name:editStudent.name,
+          role:"student",
+          metadata:{...((prev[email]?.metadata)||{}),phone:editStudent.phone||"",grade:editStudent.grade||null},
+        }
+      }));
+      const okUser=await sb.upsert("app_users",[{
+        email,
+        name:editStudent.name,
+        role:"student",
+        phone:editStudent.phone||null,
+        grade:editStudent.grade||null,
+      }],user?.accessToken||null);
+      setSync(okUser?"ok":"fail");
+    }
+    setStudents(p=>p.map(s=>s.id===editStudent.id?{...s,...editStudent,email}:s));
+    const ok=await sb.upsert("students",[{
+      id:editStudent.id,
+      name:editStudent.name,
+      email,
+      grade:editStudent.grade,
+      phone:editStudent.phone||null,
+      tuition_total:Number(editStudent.tuition_total||0),
+      tuition_paid:Number(editStudent.tuition_paid||0),
+    }]);
+    setSync(ok?"ok":"fail");
+    setToast(t.changesSaved);
+    setModal(null);
+    setEditStudent(null);
+    setEditStudentLogin({has:false,create:false,password:""});
+  };
+  const openEditTeacher=tt=>{
+    setEditTeacher({...tt});
+    const has=Boolean(creds[tt.email]);
+    setEditTeacherLogin({has,create:false,password:""});
+    setModal("edit-teacher");
+  };
+  const saveEditTeacher=async()=>{
+    if(!editTeacher?.id||!editTeacher?.name||!editTeacher?.email||!editTeacher?.subject)return;
+    const email=String(editTeacher.email).trim().toLowerCase();
+    const old=teachers.find(tt=>tt.id===editTeacher.id);
+    if(!old)return;
+    if(old.email!==email && creds[old.email]){
+      setToast(`!${t.linkedLoginEmailChangeBlocked}`);
+      return;
+    }
+    if(!editTeacherLogin.has&&editTeacherLogin.create){
+      const okAuth=await createAuthForApprovedLogin({
+        email,
+        password:editTeacherLogin.password,
+        name:editTeacher.name,
+        role:"teacher",
+        phone:editTeacher.phone||"",
+        grade:editTeacher.grade||null,
+        subject:editTeacher.subject||null,
+      });
+      if(!okAuth)return;
+      onCredsChange(prev=>({...prev,[email]:{name:editTeacher.name,role:"teacher",metadata:{phone:editTeacher.phone||"",subject:editTeacher.subject||null}}}));
+      const okUser=await sb.upsert("app_users",[{
+        email,
+        name:editTeacher.name,
+        role:"teacher",
+        phone:editTeacher.phone||null,
+        subject:editTeacher.subject||null,
+      }],user?.accessToken||null);
+      setSync(okUser?"ok":"fail");
+    }else if(editTeacherLogin.has){
+      onCredsChange(prev=>({
+        ...prev,
+        [email]:{
+          ...(prev[email]||{}),
+          name:editTeacher.name,
+          role:"teacher",
+          metadata:{...((prev[email]?.metadata)||{}),phone:editTeacher.phone||"",subject:editTeacher.subject||null},
+        }
+      }));
+      const okUser=await sb.upsert("app_users",[{
+        email,
+        name:editTeacher.name,
+        role:"teacher",
+        phone:editTeacher.phone||null,
+        subject:editTeacher.subject||null,
+      }],user?.accessToken||null);
+      setSync(okUser?"ok":"fail");
+    }
+    const sl=SLABELS[SKEYS.indexOf(editTeacher.subject)]||editTeacher.subject;
+    setTeachers(p=>p.map(tt=>tt.id===editTeacher.id?{...tt,...editTeacher,email,subjectDisplay:sl}:tt));
+    const ok=await sb.upsert("teachers",[{
+      id:editTeacher.id,
+      name:editTeacher.name,
+      email,
+      subject:editTeacher.subject,
+      subject_display:sl,
+      grade:editTeacher.grade||null,
+      phone:editTeacher.phone||null,
+    }]);
+    setSync(ok?"ok":"fail");
+    setToast(t.changesSaved);
+    setModal(null);
+    setEditTeacher(null);
+    setEditTeacherLogin({has:false,create:false,password:""});
+  };
   const rc={admin:T.warn,teacher:T.success,student:"#60a5fa",bus_driver:T.textSub};
 
-  return <PageShell T={T} t={t} themeMode={themeMode} onThemeChange={onThemeChange} lang={lang} onToggleLang={onToggleLang} onBack={onBack} title={t.admin} icon="admin" sync={sync}>
+  return <PageShell T={T} t={t} themeMode={themeMode} onThemeChange={onThemeChange} lang={lang} onToggleLang={onToggleLang} onBack={onBack} title={t.admin} icon="admin" sync={sync} wide={true}>
     {toast&&<Toast msg={toast} onDone={()=>setToast("")} T={T}/>}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:24}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:12,marginBottom:24}}>
       {[[t.students,students.length,"users",T.success],[t.teachers,teachers.length,"teacher",T.warn],[t.grades,[...new Set(students.map(s=>s.grade))].length,"grades","#60a5fa"]].map(([l,v,ic,c])=>
         <Card T={T} key={l} style={{padding:"18px 22px"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.textMuted,marginBottom:6}}>{l}</div><div style={{fontSize:30,fontWeight:800}}>{v}</div></div><div style={{width:38,height:38,borderRadius:9,background:T.surface,display:"flex",alignItems:"center",justifyContent:"center"}}><Ic n={ic} size={18} color={c}/></div></div></Card>
       )}
@@ -528,15 +1192,33 @@ function AdminDashboard({onBack,themeMode,onThemeChange,lang,onToggleLang,creds,
 
     <Card T={T} style={{marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:700}}><Ic n="user" size={16} color={T.textSub}/>{t.approvedLogins}</div><BtnO T={T} style={{padding:"6px 14px",fontSize:12}} onClick={()=>setModal("cred")}><Ic n="plus" size={13} color={T.text}/>{t.addCredential}</BtnO></div>
-      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+      {isMobile?<div style={{display:"grid",gap:8}}>
+        {Object.entries(creds).map(([email,u])=><div key={email} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:12}}>
+          <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>{u.name}</div>
+          <div style={{fontSize:12,color:T.textSub,marginBottom:4}}>{email}</div>
+          <div style={{fontSize:12,color:T.textSub,marginBottom:6}}>{u.metadata?.phone||"—"}</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+            <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:20,background:`${rc[u.role]||T.accent}18`,color:rc[u.role]||T.accent}}>{t.roles[u.role]||u.role}</span>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <button onClick={()=>openEditCred(email)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button>
+              {email!=="admin@school.edu"&&<button onClick={()=>delCred(email)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button>}
+            </div>
+          </div>
+        </div>)}
+      </div>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
         <thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.roleLabel}</TH><TH T={T}>{t.phone}</TH><TH T={T}/></tr></thead>
         <tbody>{Object.entries(creds).map(([email,u])=><tr key={email}>
           <TD T={T} bold>{u.name}</TD><TD T={T}>{email}</TD>
           <td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:20,background:`${rc[u.role]||T.accent}18`,color:rc[u.role]||T.accent}}>{t.roles[u.role]||u.role}</span></td>
           <TD T={T}>{u.metadata?.phone||"—"}</TD>
-          <td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}>{email!=="admin@school.edu"&&<button onClick={()=>delCred(email)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button>}</td>
+          <td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <button onClick={()=>openEditCred(email)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button>
+              {email!=="admin@school.edu"&&<button onClick={()=>delCred(email)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button>}
+            </div>
+          </td>
         </tr>)}</tbody>
-      </table></div>
+      </table></div>}
     </Card>
 
     <Card T={T} style={{marginBottom:16}}>
@@ -560,19 +1242,24 @@ function AdminDashboard({onBack,themeMode,onThemeChange,lang,onToggleLang,creds,
     </Card>
 
     <Card T={T} style={{marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:700}}><Ic n="stats" size={16} color={T.textSub}/>{t.accountants}</div><BtnO T={T} style={{padding:"6px 14px",fontSize:12}} onClick={()=>setModal("accountant")}><Ic n="plus" size={13} color={T.text}/>{t.addAccountant}</BtnO></div>
+      {isMobile?<div style={{display:"grid",gap:8}}>{accountants.map(a=><div key={a.id} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:12}}><div style={{fontSize:13,fontWeight:700}}>{a.name}</div><div style={{fontSize:12,color:T.textSub}}>{a.email}</div><div style={{fontSize:12,color:T.textSub}}>{a.phone||"—"}</div><div style={{display:"flex",gap:6,marginTop:8}}><button onClick={()=>openEditAccountant(a)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delAccountant(a)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></div>)}</div>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.phone}</TH><TH T={T}/></tr></thead><tbody>{accountants.map(a=><tr key={a.id}><TD T={T} bold>{a.name}</TD><TD T={T}>{a.email}</TD><TD T={T}>{a.phone||"—"}</TD><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",gap:6}}><button onClick={()=>openEditAccountant(a)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delAccountant(a)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></td></tr>)}</tbody></table></div>}
+    </Card>
+
+    <Card T={T} style={{marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:700}}><Ic n="users" size={16} color={T.textSub}/>{t.students}</div><BtnO T={T} style={{padding:"6px 14px",fontSize:12}} onClick={()=>setModal("student")}><Ic n="plus" size={13} color={T.text}/>{t.addStudent}</BtnO></div>
-      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.phone}</TH><TH T={T}>{t.grade}</TH></tr></thead><tbody>{students.map(s=><tr key={s.id}><TD T={T} bold>{s.name}</TD><TD T={T}>{s.email}</TD><TD T={T}>{s.phone||"—"}</TD><TD T={T}>{s.grade}</TD></tr>)}</tbody></table></div>
+      {isMobile?<div style={{display:"grid",gap:8}}>{students.map(s=><div key={s.id} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:12}}><div style={{fontSize:13,fontWeight:700}}>{s.name}</div><div style={{fontSize:12,color:T.textSub}}>{s.email}</div><div style={{fontSize:12,color:T.textSub}}>{s.phone||"—"}</div><div style={{fontSize:12,color:T.textSub}}>{s.grade}</div><div style={{fontSize:12,color:T.textSub}}>{t.tuitionTotal}: {Number(s.tuition_total||0)}</div><div style={{fontSize:12,color:T.textSub}}>{t.tuitionPaid}: {Number(s.tuition_paid||0)}</div><div style={{fontSize:12,color:T.textSub,marginBottom:8}}>{t.tuitionOwed}: {Math.max(0,Number(s.tuition_total||0)-Number(s.tuition_paid||0))}</div><div style={{display:"flex",gap:6}}><button onClick={()=>openEditStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></div>)}</div>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.phone}</TH><TH T={T}>{t.grade}</TH><TH T={T}>{t.tuitionTotal}</TH><TH T={T}>{t.tuitionPaid}</TH><TH T={T}>{t.tuitionOwed}</TH><TH T={T}/></tr></thead><tbody>{students.map(s=><tr key={s.id}><TD T={T} bold>{s.name}</TD><TD T={T}>{s.email}</TD><TD T={T}>{s.phone||"—"}</TD><TD T={T}>{s.grade}</TD><TD T={T}>{Number(s.tuition_total||0)}</TD><TD T={T}>{Number(s.tuition_paid||0)}</TD><TD T={T}>{Math.max(0,Number(s.tuition_total||0)-Number(s.tuition_paid||0))}</TD><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",gap:6}}><button onClick={()=>openEditStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></td></tr>)}</tbody></table></div>}
     </Card>
 
     <Card T={T}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:700}}><Ic n="teacher" size={16} color={T.textSub}/>{t.teachers}</div><BtnO T={T} style={{padding:"6px 14px",fontSize:12}} onClick={()=>setModal("teacher")}><Ic n="plus" size={13} color={T.text}/>{t.addTeacher}</BtnO></div>
-      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.phone}</TH><TH T={T}>{t.subject}</TH><TH T={T}>{t.grade}</TH></tr></thead><tbody>{teachers.map(tt=><tr key={tt.id}><TD T={T} bold>{tt.name}</TD><TD T={T}>{tt.email}</TD><TD T={T}>{tt.phone||"—"}</TD><TD T={T}>{tt.subjectDisplay||tt.subject}</TD><TD T={T}>{tt.grade||"—"}</TD></tr>)}</tbody></table></div>
+      {isMobile?<div style={{display:"grid",gap:8}}>{teachers.map(tt=><div key={tt.id} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:12}}><div style={{fontSize:13,fontWeight:700}}>{tt.name}</div><div style={{fontSize:12,color:T.textSub}}>{tt.email}</div><div style={{fontSize:12,color:T.textSub}}>{tt.phone||"—"}</div><div style={{fontSize:12,color:T.textSub}}>{tt.subjectDisplay||tt.subject}</div><div style={{fontSize:12,color:T.textSub,marginBottom:8}}>{tt.grade||"—"}</div><div style={{display:"flex",gap:6}}><button onClick={()=>openEditTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></div>)}</div>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.phone}</TH><TH T={T}>{t.subject}</TH><TH T={T}>{t.grade}</TH><TH T={T}/></tr></thead><tbody>{teachers.map(tt=><tr key={tt.id}><TD T={T} bold>{tt.name}</TD><TD T={T}>{tt.email}</TD><TD T={T}>{tt.phone||"—"}</TD><TD T={T}>{tt.subjectDisplay||tt.subject}</TD><TD T={T}>{tt.grade||"—"}</TD><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",gap:6}}><button onClick={()=>openEditTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></td></tr>)}</tbody></table></div>}
     </Card>
 
     <Modal open={modal==="cred"} onClose={()=>setModal(null)} title={t.addCredential} T={T} dir={dir}>
       {[["name",t.name,"text"],["email",t.emailLbl,"email"],["phone",t.phone,"tel"]].map(([f,lbl,tp])=><div key={f} style={{marginBottom:14}}><Lbl T={T}>{lbl}</Lbl><Inp T={T} type={tp} value={nc[f]} onChange={e=>setNc(p=>({...p,[f]:e.target.value}))}/></div>)}
-      {!SB_READY&&<div style={{marginBottom:14}}><Lbl T={T}>{t.newPassword}</Lbl><Inp T={T} type="password" value={nc.password} onChange={e=>setNc(p=>({...p,password:e.target.value}))}/></div>}
-      <div style={{marginBottom:18}}><Lbl T={T}>{t.roleLabel}</Lbl><Sel T={T} value={nc.role} onChange={e=>setNc(p=>({...p,role:e.target.value}))}>{["admin","teacher","student","bus_driver"].map(r=><option key={r} value={r}>{t.roles[r]}</option>)}</Sel></div>
+      <div style={{marginBottom:14}}><Lbl T={T}>{t.newPassword}</Lbl><Inp T={T} type="password" value={nc.password} onChange={e=>setNc(p=>({...p,password:e.target.value}))}/></div>
+      <div style={{marginBottom:18}}><Lbl T={T}>{t.roleLabel}</Lbl><Sel T={T} value={nc.role} onChange={e=>setNc(p=>({...p,role:e.target.value}))}>{["admin","teacher","student","bus_driver","accountant"].map(r=><option key={r} value={r}>{t.roles[r]}</option>)}</Sel></div>
       <BtnP T={T} style={{width:"100%"}} onClick={addCred}><Ic n="plus" size={14} color={T.accentInv}/>{t.addCredential}</BtnP>
     </Modal>
     <Modal open={modal==="period"} onClose={()=>setModal(null)} title={t.addPeriod} T={T} dir={dir}>
@@ -582,19 +1269,77 @@ function AdminDashboard({onBack,themeMode,onThemeChange,lang,onToggleLang,creds,
     <Modal open={modal==="student"} onClose={()=>setModal(null)} title={t.addStudent} T={T} dir={dir}>
       {[["name",t.name,"text"],["email",t.emailLbl,"email"],["phone",t.phone,"tel"]].map(([f,lbl,tp])=><div key={f} style={{marginBottom:14}}><Lbl T={T}>{lbl}</Lbl><Inp T={T} type={tp} value={ns[f]} onChange={e=>setNs(p=>({...p,[f]:e.target.value}))}/></div>)}
       <div style={{marginBottom:16}}><Lbl T={T}>{t.gradeLevel}</Lbl><Sel T={T} value={ns.grade} onChange={e=>setNs(p=>({...p,grade:e.target.value}))}>{t.grades1to12.map(g=><option key={g} value={g}>{g}</option>)}</Sel></div>
-      {gradePeriods.length>0&&<div style={{marginBottom:16}}><div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.textMuted,marginBottom:12}}>{t.initialGrades}</div>{gradePeriods.map(period=><div key={period.id} style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:700,color:T.textSub,marginBottom:8,paddingBottom:6,borderBottom:`1px solid ${T.border}`}}>{period.label}</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{SKEYS.map((sk,si)=><div key={sk}><Lbl T={T}>{SLABELS[si]}</Lbl><Inp T={T} type="number" min="0" max="100" value={nsG[period.id]?.[sk]??0} onChange={e=>setNsG(prev=>({...prev,[period.id]:{...prev[period.id],[sk]:+e.target.value}}))}/></div>)}</div></div>)}</div>}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
+        <div><Lbl T={T}>{t.tuitionTotal}</Lbl><Inp T={T} type="number" min="0" value={ns.tuition_total??0} onChange={e=>setNs(p=>({...p,tuition_total:+e.target.value}))}/></div>
+        <div><Lbl T={T}>{t.tuitionPaid}</Lbl><Inp T={T} type="number" min="0" value={ns.tuition_paid??0} onChange={e=>setNs(p=>({...p,tuition_paid:+e.target.value}))}/></div>
+      </div>
+      <div style={{marginBottom:12}}><Checkbox checked={nsCred.enabled} onChange={()=>setNsCred(p=>({...p,enabled:!p.enabled}))} label={t.createApprovedLogin} T={T}/></div>
+      {nsCred.enabled&&<div style={{marginBottom:16}}><Lbl T={T}>{t.newPassword}</Lbl><Inp T={T} type="password" value={nsCred.password} onChange={e=>setNsCred(p=>({...p,password:e.target.value}))}/></div>}
+      {gradePeriods.length>0&&<div style={{marginBottom:16}}><div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.textMuted,marginBottom:12}}>{t.initialGrades}</div>{gradePeriods.map(period=><div key={period.id} style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:700,color:T.textSub,marginBottom:8,paddingBottom:6,borderBottom:`1px solid ${T.border}`}}>{period.label}</div><div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:8}}>{SKEYS.map((sk,si)=><div key={sk}><Lbl T={T}>{SLABELS[si]}</Lbl><Inp T={T} type="number" min="0" max="100" value={nsG[period.id]?.[sk]??0} onChange={e=>setNsG(prev=>({...prev,[period.id]:{...prev[period.id],[sk]:+e.target.value}}))}/></div>)}</div></div>)}</div>}
       <BtnP T={T} style={{width:"100%"}} onClick={addStudent}><Ic n="plus" size={14} color={T.accentInv}/>{t.addStudent}</BtnP>
     </Modal>
     <Modal open={modal==="teacher"} onClose={()=>setModal(null)} title={t.addTeacher} T={T} dir={dir}>
       {[["name",t.name,"text"],["email",t.emailLbl,"email"],["phone",t.phone,"tel"]].map(([f,lbl,tp])=><div key={f} style={{marginBottom:14}}><Lbl T={T}>{lbl}</Lbl><Inp T={T} type={tp} value={nt[f]} onChange={e=>setNt(p=>({...p,[f]:e.target.value}))}/></div>)}
       <div style={{marginBottom:14}}><Lbl T={T}>{t.subject}</Lbl><Sel T={T} value={nt.subject} onChange={e=>setNt(p=>({...p,subject:e.target.value}))}>{subjects.map((s)=><option key={s.id} value={s.id}>{lang==="ar"?s.label_ar:s.label_en}</option>)}</Sel></div>
       <div style={{marginBottom:18}}><Lbl T={T}>{t.gradeForTeacher}</Lbl><Sel T={T} value={nt.grade} onChange={e=>setNt(p=>({...p,grade:e.target.value}))}>{t.grades1to12.map(g=><option key={g} value={g}>{g}</option>)}</Sel></div>
+      <div style={{marginBottom:12}}><Checkbox checked={ntCred.enabled} onChange={()=>setNtCred(p=>({...p,enabled:!p.enabled}))} label={t.createApprovedLogin} T={T}/></div>
+      {ntCred.enabled&&<div style={{marginBottom:16}}><Lbl T={T}>{t.newPassword}</Lbl><Inp T={T} type="password" value={ntCred.password} onChange={e=>setNtCred(p=>({...p,password:e.target.value}))}/></div>}
       <BtnP T={T} style={{width:"100%"}} onClick={addTeacher}><Ic n="plus" size={14} color={T.accentInv}/>{t.addTeacher}</BtnP>
+    </Modal>
+    <Modal open={modal==="accountant"} onClose={()=>setModal(null)} title={t.addAccountant} T={T} dir={dir}>
+      {[["name",t.name,"text"],["email",t.emailLbl,"email"],["phone",t.phone,"tel"]].map(([f,lbl,tp])=><div key={f} style={{marginBottom:14}}><Lbl T={T}>{lbl}</Lbl><Inp T={T} type={tp} value={na[f]} onChange={e=>setNa(p=>({...p,[f]:e.target.value}))}/></div>)}
+      <div style={{marginBottom:12}}><Checkbox checked={naCred.enabled} onChange={()=>setNaCred(p=>({...p,enabled:!p.enabled}))} label={t.createApprovedLogin} T={T}/></div>
+      {naCred.enabled&&<div style={{marginBottom:16}}><Lbl T={T}>{t.newPassword}</Lbl><Inp T={T} type="password" value={naCred.password} onChange={e=>setNaCred(p=>({...p,password:e.target.value}))}/></div>}
+      <BtnP T={T} style={{width:"100%"}} onClick={addAccountant}><Ic n="plus" size={14} color={T.accentInv}/>{t.addAccountant}</BtnP>
     </Modal>
     <Modal open={modal==="subject"} onClose={()=>setModal(null)} title={t.addSubject} T={T} dir={dir}>
       <div style={{marginBottom:14}}><Lbl T={T}>الاسم بالعربية</Lbl><Inp T={T} value={newSubj.label_ar} onChange={e=>setNewSubj(p=>({...p,label_ar:e.target.value}))} placeholder="مثال: كيمياء"/></div>
       <div style={{marginBottom:18}}><Lbl T={T}>English Name</Lbl><Inp T={T} value={newSubj.label_en} onChange={e=>setNewSubj(p=>({...p,label_en:e.target.value}))} placeholder="e.g. Chemistry"/></div>
       <BtnP T={T} style={{width:"100%"}} onClick={addSubject}><Ic n="plus" size={14} color={T.accentInv}/>{t.addSubject}</BtnP>
+    </Modal>
+    <Modal open={modal==="edit-cred"} onClose={()=>setModal(null)} title={t.editInfo} T={T} dir={dir}>
+      <div style={{marginBottom:14}}><Lbl T={T}>{t.emailLbl}</Lbl><Inp T={T} value={editCred?.email||""} disabled/></div>
+      <div style={{marginBottom:14}}><Lbl T={T}>{t.name}</Lbl><Inp T={T} value={editCred?.name||""} onChange={e=>setEditCred(p=>({...p,name:e.target.value}))}/></div>
+      <div style={{marginBottom:14}}><Lbl T={T}>{t.phone}</Lbl><Inp T={T} value={editCred?.phone||""} onChange={e=>setEditCred(p=>({...p,phone:e.target.value}))}/></div>
+      <div style={{marginBottom:18}}><Lbl T={T}>{t.roleLabel}</Lbl><Sel T={T} value={editCred?.role||"teacher"} onChange={e=>setEditCred(p=>({...p,role:e.target.value}))}>{["admin","teacher","student","bus_driver","accountant"].map(r=><option key={r} value={r}>{t.roles[r]}</option>)}</Sel></div>
+      <BtnP T={T} style={{width:"100%"}} onClick={saveEditCred}><Ic n="save" size={14} color={T.accentInv}/>{t.saveChanges}</BtnP>
+    </Modal>
+    <Modal open={modal==="edit-student"} onClose={()=>setModal(null)} title={t.editInfo} T={T} dir={dir}>
+      <div style={{marginBottom:14}}><Lbl T={T}>{t.name}</Lbl><Inp T={T} value={editStudent?.name||""} onChange={e=>setEditStudent(p=>({...p,name:e.target.value}))}/></div>
+      <div style={{marginBottom:14}}><Lbl T={T}>{t.emailLbl}</Lbl><Inp T={T} type="email" value={editStudent?.email||""} onChange={e=>setEditStudent(p=>({...p,email:e.target.value}))}/></div>
+      <div style={{marginBottom:14}}><Lbl T={T}>{t.phone}</Lbl><Inp T={T} value={editStudent?.phone||""} onChange={e=>setEditStudent(p=>({...p,phone:e.target.value}))}/></div>
+      <div style={{marginBottom:18}}><Lbl T={T}>{t.gradeLevel}</Lbl><Sel T={T} value={editStudent?.grade||t.grades1to12[0]} onChange={e=>setEditStudent(p=>({...p,grade:e.target.value}))}>{t.grades1to12.map(g=><option key={g} value={g}>{g}</option>)}</Sel></div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
+        <div><Lbl T={T}>{t.tuitionTotal}</Lbl><Inp T={T} type="number" min="0" value={editStudent?.tuition_total??0} onChange={e=>setEditStudent(p=>({...p,tuition_total:+e.target.value}))}/></div>
+        <div><Lbl T={T}>{t.tuitionPaid}</Lbl><Inp T={T} type="number" min="0" value={editStudent?.tuition_paid??0} onChange={e=>setEditStudent(p=>({...p,tuition_paid:+e.target.value}))}/></div>
+      </div>
+      {editStudentLogin.has?<div style={{marginBottom:14,fontSize:12,color:T.success,background:`${T.success}14`,border:`1px solid ${T.success}44`,borderRadius:8,padding:"10px 12px"}}>{t.approvedLoginLinked}</div>:<>
+        <div style={{marginBottom:12}}><Checkbox checked={editStudentLogin.create} onChange={()=>setEditStudentLogin(p=>({...p,create:!p.create}))} label={t.createLoginOnSave} T={T}/></div>
+        {editStudentLogin.create&&<div style={{marginBottom:16}}><Lbl T={T}>{t.newPassword}</Lbl><Inp T={T} type="password" value={editStudentLogin.password} onChange={e=>setEditStudentLogin(p=>({...p,password:e.target.value}))}/></div>}
+      </>}
+      <BtnP T={T} style={{width:"100%"}} onClick={saveEditStudent}><Ic n="save" size={14} color={T.accentInv}/>{t.saveChanges}</BtnP>
+    </Modal>
+    <Modal open={modal==="edit-teacher"} onClose={()=>setModal(null)} title={t.editInfo} T={T} dir={dir}>
+      <div style={{marginBottom:14}}><Lbl T={T}>{t.name}</Lbl><Inp T={T} value={editTeacher?.name||""} onChange={e=>setEditTeacher(p=>({...p,name:e.target.value}))}/></div>
+      <div style={{marginBottom:14}}><Lbl T={T}>{t.emailLbl}</Lbl><Inp T={T} type="email" value={editTeacher?.email||""} onChange={e=>setEditTeacher(p=>({...p,email:e.target.value}))}/></div>
+      <div style={{marginBottom:14}}><Lbl T={T}>{t.phone}</Lbl><Inp T={T} value={editTeacher?.phone||""} onChange={e=>setEditTeacher(p=>({...p,phone:e.target.value}))}/></div>
+      <div style={{marginBottom:14}}><Lbl T={T}>{t.subject}</Lbl><Sel T={T} value={editTeacher?.subject||subjects[0]?.id||"math"} onChange={e=>setEditTeacher(p=>({...p,subject:e.target.value}))}>{subjects.map((s)=><option key={s.id} value={s.id}>{lang==="ar"?s.label_ar:s.label_en}</option>)}</Sel></div>
+      <div style={{marginBottom:18}}><Lbl T={T}>{t.gradeForTeacher}</Lbl><Sel T={T} value={editTeacher?.grade||t.grades1to12[0]} onChange={e=>setEditTeacher(p=>({...p,grade:e.target.value}))}>{t.grades1to12.map(g=><option key={g} value={g}>{g}</option>)}</Sel></div>
+      {editTeacherLogin.has?<div style={{marginBottom:14,fontSize:12,color:T.success,background:`${T.success}14`,border:`1px solid ${T.success}44`,borderRadius:8,padding:"10px 12px"}}>{t.approvedLoginLinked}</div>:<>
+        <div style={{marginBottom:12}}><Checkbox checked={editTeacherLogin.create} onChange={()=>setEditTeacherLogin(p=>({...p,create:!p.create}))} label={t.createLoginOnSave} T={T}/></div>
+        {editTeacherLogin.create&&<div style={{marginBottom:16}}><Lbl T={T}>{t.newPassword}</Lbl><Inp T={T} type="password" value={editTeacherLogin.password} onChange={e=>setEditTeacherLogin(p=>({...p,password:e.target.value}))}/></div>}
+      </>}
+      <BtnP T={T} style={{width:"100%"}} onClick={saveEditTeacher}><Ic n="save" size={14} color={T.accentInv}/>{t.saveChanges}</BtnP>
+    </Modal>
+    <Modal open={modal==="edit-accountant"} onClose={()=>setModal(null)} title={t.editInfo} T={T} dir={dir}>
+      <div style={{marginBottom:14}}><Lbl T={T}>{t.name}</Lbl><Inp T={T} value={editAccountant?.name||""} onChange={e=>setEditAccountant(p=>({...p,name:e.target.value}))}/></div>
+      <div style={{marginBottom:14}}><Lbl T={T}>{t.emailLbl}</Lbl><Inp T={T} type="email" value={editAccountant?.email||""} onChange={e=>setEditAccountant(p=>({...p,email:e.target.value}))}/></div>
+      <div style={{marginBottom:14}}><Lbl T={T}>{t.phone}</Lbl><Inp T={T} value={editAccountant?.phone||""} onChange={e=>setEditAccountant(p=>({...p,phone:e.target.value}))}/></div>
+      {editAccountantLogin.has?<div style={{marginBottom:14,fontSize:12,color:T.success,background:`${T.success}14`,border:`1px solid ${T.success}44`,borderRadius:8,padding:"10px 12px"}}>{t.approvedLoginLinked}</div>:<>
+        <div style={{marginBottom:12}}><Checkbox checked={editAccountantLogin.create} onChange={()=>setEditAccountantLogin(p=>({...p,create:!p.create}))} label={t.createLoginOnSave} T={T}/></div>
+        {editAccountantLogin.create&&<div style={{marginBottom:16}}><Lbl T={T}>{t.newPassword}</Lbl><Inp T={T} type="password" value={editAccountantLogin.password} onChange={e=>setEditAccountantLogin(p=>({...p,password:e.target.value}))}/></div>}
+      </>}
+      <BtnP T={T} style={{width:"100%"}} onClick={saveEditAccountant}><Ic n="save" size={14} color={T.accentInv}/>{t.saveChanges}</BtnP>
     </Modal>
   </PageShell>;
 }
@@ -602,20 +1347,93 @@ function AdminDashboard({onBack,themeMode,onThemeChange,lang,onToggleLang,creds,
 // ── Teacher Dashboard ─────────────────────────────────────────────────────────
 function TeacherDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,onSignOut,gradePeriods,studentGrades,onStudentGradesChange,subjects=[]}){
   const T=getTheme(themeMode),t=TR[lang],dir=t.dir;
-  const[students]=useState(DEMO_STUDENTS);
-  const[studAtt]=useState(STUDENT_ATT);
+  const isMobile=useIsMobile();
+  const[students,setStudents]=useState(DEMO_STUDENTS);
+  const[studAtt,setStudAtt]=useState(STUDENT_ATT);
   const[activeGrade,setActiveGrade]=useState(null);
   const[tab,setTab]=useState("attendance");
   const[editSt,setEditSt]=useState(null);
+  const[profileSt,setProfileSt]=useState(null);
   const[gVals,setGVals]=useState({});
   const[toast,setToast]=useState("");
   const[sync,setSync]=useState(null);
   const SLABELS=subjects.map(s=>lang==="ar"?s.label_ar:s.label_en);
   const SKEYS=subjects.map(s=>s.id);
   // Teacher's subject — ONLY this subject is editable
-  const tSubjKey=user.metadata?.subject||"math";
-  const tSubjLabel=SLABELS[SKEYS.indexOf(tSubjKey)]||tSubjKey;
+  const tSubjKey=user.metadata?.subject||null;
+  const tSubjLabel=tSubjKey?(SLABELS[SKEYS.indexOf(tSubjKey)]||tSubjKey):"—";
+  useEffect(()=>{
+    let alive=true;
+    async function loadTeacherData(){
+      const[dS,dA]=await Promise.all([
+        sb.get("students","?order=created_at.asc",user?.accessToken||null),
+        sb.get("attendance","?select=student_id,year_month,days",user?.accessToken||null)
+      ]);
+      if(!alive)return;
+      if(dS&&dS.length>0){
+        setStudents(dS.map(s=>({
+          id:s.id,
+          name:s.name,
+          email:s.email,
+          grade:s.grade,
+          phone:s.phone||"",
+        })));
+      }
+      if(dA&&dA.length>0){
+        const mapped={};
+        dA.forEach(r=>{
+          if(!mapped[r.student_id])mapped[r.student_id]={};
+          mapped[r.student_id][r.year_month]=r.days||{};
+        });
+        setStudAtt(prev=>({...prev,...mapped}));
+      }
+    }
+    loadTeacherData();
+    return()=>{alive=false;};
+  },[]);
   const grouped=students.reduce((a,s)=>{(a[s.grade]=a[s.grade]||[]).push(s);return a;},{});
+  const requireToken=()=>{
+    if(SB_READY&&!user?.accessToken){
+      setToast("!Session expired. Please sign in again.");
+      setSync("fail");
+      return false;
+    }
+    return true;
+  };
+  const markTodayForGrade=async(present)=>{
+    if(!requireToken())return;
+    if(!tSubjKey){
+      setToast("!No subject assigned to this teacher.");
+      setSync("fail");
+      return;
+    }
+    if(!activeGrade)return;
+    const today=new Date();
+    const key=`${today.getFullYear()}-${today.getMonth()}`;
+    const day=String(today.getDate());
+    const targets=grouped[activeGrade]||[];
+    if(targets.length===0)return;
+    let ok=true;
+    for(const st of targets){
+      const currentVal=studAtt[st.id]?.[key]?.[day];
+      const nextDayVal=(currentVal&&typeof currentVal==="object")
+        ? {...currentVal,[tSubjKey]:present}
+        : {[tSubjKey]:present};
+      const nextDays={...(studAtt[st.id]?.[key]||{}),[day]:nextDayVal};
+      setStudAtt(prev=>({
+        ...prev,
+        [st.id]:{...(prev[st.id]||{}),[key]:nextDays}
+      }));
+      const r=await sb.upsertWithStatusOnConflict("attendance",[{student_id:st.id,year_month:key,days:nextDays}],"student_id,year_month",user?.accessToken||null);
+      if(!r.ok){
+        ok=false;
+        setToast(`!Attendance save failed: ${String(r.error||`status ${r.status}`).slice(0,120)}`);
+        break;
+      }
+    }
+    setSync(ok?"ok":"fail");
+    if(ok)setToast(t.attendanceSaved);
+  };
 
   const openEdit=st=>{
     const ex=studentGrades[st.id]||{};
@@ -624,14 +1442,20 @@ function TeacherDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
     setGVals(v);setEditSt(st);
   };
   const saveGrades=async()=>{
+    if(!requireToken())return;
     if(!editSt)return;
     onStudentGradesChange(prev=>({...prev,[editSt.id]:gVals}));
     setToast(t.gradesSaved);
     let ok=true;
     for(const p of gradePeriods){
-      const r=await sb.upsert("grades",[{student_id:editSt.id,period_id:p.id,scores:gVals[p.id]}]);
-      if(!r)ok=false;
+      const r=await sb.upsertWithStatusOnConflict("grades",[{student_id:editSt.id,period_id:p.id,scores:gVals[p.id]}],"student_id,period_id",user?.accessToken||null);
+      if(!r.ok){
+        ok=false;
+        setToast(`!Grades save failed: ${String(r.error||`status ${r.status}`).slice(0,120)}`);
+        break;
+      }
     }
+    if(ok)setToast(t.gradesSaved);
     setSync(ok?"ok":"fail");setEditSt(null);
   };
 
@@ -656,10 +1480,40 @@ function TeacherDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
       <div style={{display:"flex",gap:6,marginBottom:22}}>
         {[["attendance",t.attendance,"attend"],["grades",t.gradesTxt,"grades"]].map(([tb,lbl,ic])=><button key={tb} onClick={()=>setTab(tb)} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 18px",borderRadius:7,border:`1px solid ${tab===tb?T.accent:T.border}`,background:tab===tb?T.accent:"transparent",color:tab===tb?T.accentInv:T.textSub,cursor:"pointer",fontSize:12,fontWeight:600}}><Ic n={ic} size={13} color={tab===tb?T.accentInv:T.textSub}/>{lbl}</button>)}
       </div>
-      {tab==="attendance"&&<AttendanceCalendar T={T} t={t} editable={true} students={grouped[activeGrade]||[]} initAtt={studAtt} onSave={async(sid,key,days)=>{const ok=await sb.upsert("attendance",[{student_id:sid,year_month:key,days}]);setSync(ok?"ok":"fail");setToast(t.attendanceSaved);setActiveGrade(null);}}/>}
+      {tab==="attendance"&&<>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+          <BtnO T={T} style={{padding:"6px 12px",fontSize:11}} onClick={()=>markTodayForGrade(true)}><Ic n="check" size={12} color={T.text}/>{t.present}</BtnO>
+          <BtnO T={T} style={{padding:"6px 12px",fontSize:11}} onClick={()=>markTodayForGrade(false)}><Ic n="alert" size={12} color={T.text}/>{t.absent}</BtnO>
+        </div>
+        {!tSubjKey?<div style={{padding:"10px 12px",borderRadius:8,background:`${T.warn}14`,border:`1px solid ${T.warn}33`,fontSize:12,color:T.warn}}>No subject assigned to this teacher account.</div>:
+          <AttendanceCalendar T={T} t={t} editable={true} students={grouped[activeGrade]||[]} initAtt={studAtt} subjectKey={tSubjKey} onSave={async(sid,key,days)=>{
+            if(!requireToken())return;
+            if(!tSubjKey){
+              setToast("!No subject assigned to this teacher.");
+              setSync("fail");
+              return;
+            }
+            const prevDays=studAtt[sid]?.[key]||{};
+            const safeDays={...prevDays};
+            Object.entries(days||{}).forEach(([d,v])=>{
+              const prevVal=prevDays[d];
+              const nextObj=(prevVal&&typeof prevVal==="object")?{...prevVal}:{};
+              nextObj[tSubjKey]=Boolean(v&&typeof v==="object"?v[tSubjKey]:false);
+              safeDays[d]=nextObj;
+            });
+            const r=await sb.upsertWithStatusOnConflict("attendance",[{student_id:sid,year_month:key,days:safeDays}],"student_id,year_month",user?.accessToken||null);
+            setStudAtt(prev=>({
+              ...prev,
+              [sid]:{...(prev[sid]||{}),[key]:safeDays}
+            }));
+            setSync(r.ok?"ok":"fail");
+            setToast(r.ok?t.attendanceSaved:`!Attendance save failed: ${String(r.error||`status ${r.status}`).slice(0,120)}`);
+            if(r.ok)setActiveGrade(null);
+          }}/>}
+      </>}
       {tab==="grades"&&<table style={{width:"100%",borderCollapse:"collapse"}}>
-        <thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.phone}</TH><TH T={T}/></tr></thead>
-        <tbody>{(grouped[activeGrade]||[]).map(st=><tr key={st.id}><TD T={T} bold>{st.name}</TD><TD T={T}>{st.email}</TD><TD T={T}>{st.phone||"—"}</TD><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><BtnO T={T} style={{padding:"5px 12px",fontSize:11}} onClick={()=>openEdit(st)}><Ic n="edit" size={12} color={T.text}/>{t.edit}</BtnO></td></tr>)}</tbody>
+        <thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.phone}</TH><TH T={T}/><TH T={T}/></tr></thead>
+        <tbody>{(grouped[activeGrade]||[]).map(st=><tr key={st.id}><TD T={T} bold>{st.name}</TD><TD T={T}>{st.email}</TD><TD T={T}>{st.phone||"—"}</TD><td style={{padding:"12px 8px",borderBottom:`1px solid ${T.border}`}}><BtnO T={T} style={{padding:"5px 10px",fontSize:11}} onClick={()=>setProfileSt(st)}><Ic n="user" size={12} color={T.text}/>{t.viewProfile}</BtnO></td><td style={{padding:"12px 8px",borderBottom:`1px solid ${T.border}`}}><BtnO T={T} style={{padding:"5px 10px",fontSize:11}} onClick={()=>openEdit(st)}><Ic n="edit" size={12} color={T.text}/>{t.edit}</BtnO></td></tr>)}</tbody>
       </table>}
     </Modal>
 
@@ -671,7 +1525,7 @@ function TeacherDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
         </div>
         {gradePeriods.map(period=><div key={period.id} style={{marginBottom:20}}>
           <div style={{fontSize:12,fontWeight:700,color:T.textSub,marginBottom:10,paddingBottom:7,borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:6}}><Ic n="attend" size={12} color={T.textMuted}/>{period.label}</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
             {SKEYS.map((sk,si)=>{
               const mine=sk===tSubjKey;
               return <div key={sk} style={{opacity:mine?1:0.35}}>
@@ -686,24 +1540,122 @@ function TeacherDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
         <BtnP T={T} style={{width:"100%"}} onClick={saveGrades}><Ic n="save" size={15} color={T.accentInv}/>{t.saveGrades}</BtnP>
       </>}
     </Modal>
+
+    <Modal open={!!profileSt} onClose={()=>setProfileSt(null)} title={`${t.viewProfile} — ${profileSt?.name||""}`} T={T} dir={dir}>
+      {profileSt&&(()=>{
+        const sid=profileSt.id;
+        const myG=studentGrades[sid]||{};
+        const myAtt=studAtt[sid]||{};
+        const months=Object.values(myAtt);
+        const allDays=months.flatMap(m=>Object.values(m||{}));
+        const dayPresent=v=>typeof v==="boolean"?v:(v&&typeof v==="object"?Object.values(v).some(Boolean):false);
+        const pres=allDays.filter(dayPresent).length;
+        const total=allDays.length;
+        const rate=total?Math.round((pres/total)*100):0;
+        const avgSub=sk=>{
+          const vals=gradePeriods.map(p=>myG[p.id]?.[sk]??0).filter(v=>v>0);
+          return vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length):0;
+        };
+        return <div>
+          <InfoCard T={T} name={profileSt.name} icon="student" details={[{icon:"phone",label:t.phone,value:profileSt.phone||"—"},{icon:"grades",label:t.grade,value:profileSt.grade||"—"},{icon:"attend",label:t.rate,value:`${rate}%`}]} />
+          <Card T={T} style={{padding:16}}>
+            <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:T.textMuted,marginBottom:10}}>{t.gradesTxt}</div>
+            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:8}}>
+              {SKEYS.map((sk,si)=><div key={sk} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:12,color:T.textSub}}>{SLABELS[si]}</span>
+                <span style={{fontSize:13,fontWeight:700,color:T.text}}>{avgSub(sk)||"—"}</span>
+              </div>)}
+            </div>
+          </Card>
+        </div>;
+      })()}
+    </Modal>
   </PageShell>;
 }
 
 // ── Student Dashboard ─────────────────────────────────────────────────────────
 function StudentDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,onSignOut,gradePeriods,studentGrades,subjects=[]}){
   const T=getTheme(themeMode),t=TR[lang];
+  const isMobile=useIsMobile();
   const[tab,setTab]=useState("grades");
-  const sr=DEMO_STUDENTS.find(s=>s.email===user.email)||{};
-  const info={name:user.name,grade:user.metadata?.grade||"الصف 10",phone:user.metadata?.phone||sr.phone||"—"};
-  const SLABELS=subjects.map(s=>lang==="ar"?s.label_ar:s.label_en);
-  const SKEYS=subjects.map(s=>s.id);
+  const[sr,setSr]=useState(()=>DEMO_STUDENTS.find(s=>s.email===user.email)||{});
+  const[myAtt,setMyAtt]=useState({});
+  const[myGrades,setMyGrades]=useState({});
+  const[studentLoaded,setStudentLoaded]=useState(false);
+  const[selectedSubject,setSelectedSubject]=useState("__all");
+  const[attSubject,setAttSubject]=useState("math");
+  const info={name:user.name,grade:user.metadata?.grade||sr.grade||"—",phone:user.metadata?.phone||sr.phone||"—"};
+  const subjList=subjects.length>0?subjects:t.subjectKeys.map((id,i)=>({id,label_ar:t.subjects[i]||id,label_en:t.subjects[i]||id}));
+  const SLABELS=subjList.map(s=>lang==="ar"?s.label_ar:s.label_en);
+  const SKEYS=subjList.map(s=>s.id);
   const gc=v=>v>=90?T.success:v>=80?T.text:v>=70?T.warn:T.danger;
-  const sid=sr.id||"s1";
-  const myAtt={[sid]:STUDENT_ATT[sid]||STUDENT_ATT["s1"]};
-  const myG=studentGrades[sid]||{};
+  useEffect(()=>{
+    if(selectedSubject==="__all")return;
+    if(SKEYS.length>0 && !SKEYS.includes(selectedSubject)){
+      setSelectedSubject("__all");
+    }
+  },[SKEYS,selectedSubject]);
+  useEffect(()=>{
+    if(SKEYS.length>0 && !SKEYS.includes(attSubject)){
+      setAttSubject(SKEYS[0]);
+    }
+  },[SKEYS,attSubject]);
+  useEffect(()=>{
+    let alive=true;
+    async function loadStudentSelf(){
+      const email=String(user.email||"").trim().toLowerCase();
+      const row=(await sb.get("students",`?email=eq.${esc(email)}&select=id,name,email,grade,phone,tuition_total,tuition_paid&limit=1`,user?.accessToken||null))?.[0];
+      if(!alive)return;
+      if(row){
+        setSr({id:row.id,name:row.name,email:row.email,grade:row.grade,phone:row.phone||"",tuition_total:Number(row.tuition_total||0),tuition_paid:Number(row.tuition_paid||0)});
+      }
+      setStudentLoaded(true);
+    }
+    loadStudentSelf();
+    return()=>{alive=false;};
+  },[user.email,user?.accessToken]);
+  const sid=sr.id||(!SB_READY?(DEMO_STUDENTS.find(s=>s.email===user.email)?.id||"s1"):null);
+  useEffect(()=>{
+    let alive=true;
+    async function loadMyGrades(){
+      if(!sid)return;
+      const rows=await sb.get("grades",`?student_id=eq.${esc(sid)}&select=period_id,scores`,user?.accessToken||null);
+      if(!alive)return;
+      if(rows&&rows.length>0){
+        const mapped={};
+        rows.forEach(r=>{mapped[r.period_id]=r.scores||{};});
+        setMyGrades(mapped);
+      }else{
+        setMyGrades(studentGrades[sid]||{});
+      }
+    }
+    loadMyGrades();
+    return()=>{alive=false;};
+  },[sid,user?.accessToken,studentGrades]);
+  useEffect(()=>{
+    let alive=true;
+    async function loadMyAttendance(){
+      if(!sid)return;
+      const rows=await sb.get("attendance",`?student_id=eq.${esc(sid)}&select=year_month,days`,user?.accessToken||null);
+      if(!alive)return;
+      if(rows&&rows.length>0){
+        const mapped={};
+        rows.forEach(r=>{mapped[r.year_month]=r.days||{};});
+        setMyAtt({[sid]:mapped});
+      }else{
+        setMyAtt({[sid]:STUDENT_ATT[sid]||STUDENT_ATT["s1"]});
+      }
+    }
+    loadMyAttendance();
+    return()=>{alive=false;};
+  },[sid,user?.accessToken]);
+  const myG=myGrades||{};
   const sAvg=sk=>{const v=gradePeriods.map(p=>myG[p.id]?.[sk]??0).filter(v=>v>0);return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length):0;};
   const finals=Object.fromEntries(SKEYS.map(s=>[s,sAvg(s)]));
-  const total=Math.round(SKEYS.reduce((a,s)=>a+finals[s],0)/SKEYS.length);
+  const total=SKEYS.length>0?Math.round(SKEYS.reduce((a,s)=>a+finals[s],0)/SKEYS.length):0;
+  const tuitionTotal=Number(sr.tuition_total||0);
+  const tuitionPaid=Number(sr.tuition_paid||0);
+  const tuitionOwed=Math.max(0,tuitionTotal-tuitionPaid);
 
   return <PageShell T={T} t={t} themeMode={themeMode} onThemeChange={onThemeChange} lang={lang} onToggleLang={onToggleLang} onBack={onBack} title={t.student} icon="student"
     rightEl={<BtnO T={T} style={{padding:"7px 14px",fontSize:12}} onClick={onSignOut}><Ic n="signout" size={14} color={T.textSub}/>{t.signOut}</BtnO>}>
@@ -714,19 +1666,167 @@ function StudentDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
         <div style={{fontSize:38,fontWeight:800,color:gc(total),lineHeight:1}}>{total||"—"}</div>
       </div>
     </div>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,minmax(140px,1fr))",gap:10,marginBottom:16}}>
+      <Card T={T} style={{padding:14}}><div style={{fontSize:11,color:T.textMuted,marginBottom:4}}>{t.tuitionTotal}</div><div style={{fontSize:22,fontWeight:800}}>{tuitionTotal}</div></Card>
+      <Card T={T} style={{padding:14}}><div style={{fontSize:11,color:T.textMuted,marginBottom:4}}>{t.tuitionPaid}</div><div style={{fontSize:22,fontWeight:800,color:T.success}}>{tuitionPaid}</div></Card>
+      <Card T={T} style={{padding:14}}><div style={{fontSize:11,color:T.textMuted,marginBottom:4}}>{t.tuitionOwed}</div><div style={{fontSize:22,fontWeight:800,color:T.warn}}>{tuitionOwed}</div></Card>
+    </div>
     <div style={{display:"flex",gap:7,marginBottom:22}}>
       {[["grades",t.gradesTxt,"grades"],["attendance",t.attendance,"attend"]].map(([tb,lbl,ic])=><button key={tb} onClick={()=>setTab(tb)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 18px",borderRadius:8,border:`1px solid ${tab===tb?T.accent:T.border}`,background:tab===tb?T.accent:"transparent",color:tab===tb?T.accentInv:T.textSub,cursor:"pointer",fontSize:13,fontWeight:600}}><Ic n={ic} size={14} color={tab===tb?T.accentInv:T.textSub}/>{lbl}</button>)}
     </div>
+    {tab==="grades"&&<Card T={T} style={{marginBottom:16,padding:14}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <Lbl T={T}>{t.subject}</Lbl>
+        <Sel T={T} value={selectedSubject} onChange={e=>setSelectedSubject(e.target.value)} style={{maxWidth:240}}>
+          <option value="__all">{t.seeAllGrades}</option>
+          {subjList.map((s)=><option key={s.id} value={s.id}>{lang==="ar"?s.label_ar:s.label_en}</option>)}
+        </Sel>
+        {selectedSubject!=="__all"&&<div style={{fontSize:12,color:T.textSub}}>{t.average}: <strong style={{color:gc(finals[selectedSubject]||0)}}>{finals[selectedSubject]??"—"}</strong></div>}
+      </div>
+    </Card>}
     {tab==="grades"&&<Card T={T}>{gradePeriods.length===0?<div style={{color:T.textMuted,fontSize:13,padding:"20px 0",textAlign:"center"}}>{t.noGradePeriods}</div>:
-      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:500}}>
-        <thead><tr><TH T={T}>{t.period}</TH>{SKEYS.map((sk,i)=><TH T={T} center key={sk}>{SLABELS[i]}</TH>)}</tr></thead>
-        <tbody>
-          {gradePeriods.map(p=>{const pg=myG[p.id]||{};return <tr key={p.id}><TD T={T} bold>{p.label}</TD>{SKEYS.map(s=><TD T={T} center key={s} color={gc(pg[s]??0)}>{pg[s]??"—"}</TD>)}</tr>;})}
-          <tr style={{background:T.surface}}><td style={{padding:"12px 14px",fontWeight:800,fontSize:13,color:T.text,textAlign:"right"}}>{t.final}</td>{SKEYS.map(s=><td key={s} style={{padding:"12px 14px",textAlign:"center",fontWeight:800,fontSize:13,color:gc(finals[s])}}>{finals[s]||"—"}</td>)}</tr>
-        </tbody>
-      </table></div>
+      selectedSubject==="__all"
+      ? <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:500}}>
+          <thead><tr><TH T={T}>{t.period}</TH>{SKEYS.map((sk,i)=><TH T={T} center key={sk}>{SLABELS[i]}</TH>)}</tr></thead>
+          <tbody>
+            {gradePeriods.map(p=>{const pg=myG[p.id]||{};return <tr key={p.id}><TD T={T} bold>{p.label}</TD>{SKEYS.map(s=><TD T={T} center key={s} color={gc(pg[s]??0)}>{pg[s]??"—"}</TD>)}</tr>;})}
+            <tr style={{background:T.surface}}><td style={{padding:"12px 14px",fontWeight:800,fontSize:13,color:T.text,textAlign:"right"}}>{t.final}</td>{SKEYS.map(s=><td key={s} style={{padding:"12px 14px",textAlign:"center",fontWeight:800,fontSize:13,color:gc(finals[s])}}>{finals[s]||"—"}</td>)}</tr>
+          </tbody>
+        </table></div>
+      : <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:340}}>
+          <thead><tr><TH T={T}>{t.period}</TH><TH T={T} center>{SLABELS[SKEYS.indexOf(selectedSubject)]||selectedSubject}</TH></tr></thead>
+          <tbody>
+            {gradePeriods.map(p=>{const pg=myG[p.id]||{};return <tr key={p.id}><TD T={T} bold>{p.label}</TD><TD T={T} center color={gc(pg[selectedSubject]??0)}>{pg[selectedSubject]??"—"}</TD></tr>;})}
+            <tr style={{background:T.surface}}><td style={{padding:"12px 14px",fontWeight:800,fontSize:13,color:T.text,textAlign:"right"}}>{t.final}</td><td style={{padding:"12px 14px",textAlign:"center",fontWeight:800,fontSize:13,color:gc(finals[selectedSubject]||0)}}>{finals[selectedSubject]||"—"}</td></tr>
+          </tbody>
+        </table></div>
     }</Card>}
-    {tab==="attendance"&&<Card T={T}><AttendanceCalendar T={T} t={t} editable={false} students={[{id:sid,name:info.name}]} initAtt={myAtt}/></Card>}
+    {tab==="attendance"&&<Card T={T} style={{marginBottom:16,padding:14}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <Lbl T={T}>{t.subject}</Lbl>
+        <Sel T={T} value={attSubject} onChange={e=>setAttSubject(e.target.value)} style={{maxWidth:240}}>
+          {subjList.map((s)=><option key={s.id} value={s.id}>{lang==="ar"?s.label_ar:s.label_en}</option>)}
+        </Sel>
+      </div>
+    </Card>}
+    {tab==="attendance"&&<Card T={T}><AttendanceCalendar T={T} t={t} editable={false} students={[{id:sid,name:info.name}]} initAtt={myAtt} subjectKey={attSubject} showStudentSelector={false}/></Card>}
+  </PageShell>;
+}
+
+// ── Accountant Dashboard ─────────────────────────────────────────────────────
+function AccountantDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,onSignOut}){
+  const T=getTheme(themeMode),t=TR[lang];
+  const isMobile=useIsMobile();
+  const[students,setStudents]=useState(DEMO_STUDENTS);
+  const[selectedGrade,setSelectedGrade]=useState("all");
+  const[toast,setToast]=useState("");
+  const[savingId,setSavingId]=useState(null);
+  const[sync,setSync]=useState(null);
+  useEffect(()=>{
+    let alive=true;
+    async function load(){
+      const dS=await sb.get("students","?order=created_at.asc",user?.accessToken||null);
+      if(!alive)return;
+      if(dS&&dS.length>0){
+        setStudents(dS.map(s=>({
+          id:s.id,name:s.name,email:s.email,grade:s.grade,phone:s.phone||"",
+          tuition_total:Number(s.tuition_total||0),
+          tuition_paid:Number(s.tuition_paid||0),
+        })));
+        setSync("ok");
+      }else if(dS===null){
+        setSync("fail");
+      }
+    }
+    load();
+    return()=>{alive=false;};
+  },[user?.accessToken]);
+  const gradeRank=g=>{
+    const m=String(g||"").match(/\d+/);
+    return m?Number(m[0]):Number.MAX_SAFE_INTEGER;
+  };
+  const gradeOptions=Array.from(new Set(students.map(s=>s.grade).filter(Boolean))).sort((a,b)=>{
+    const ra=gradeRank(a),rb=gradeRank(b);
+    if(ra!==rb)return ra-rb;
+    return String(a).localeCompare(String(b), lang==="ar"?"ar":"en");
+  });
+  const shownStudents=students
+    .filter(s=>selectedGrade==="all"||s.grade===selectedGrade)
+    .slice()
+    .sort((a,b)=>{
+      const ra=gradeRank(a.grade),rb=gradeRank(b.grade);
+      if(ra!==rb)return ra-rb;
+      const gcmp=String(a.grade||"").localeCompare(String(b.grade||""), lang==="ar"?"ar":"en");
+      if(gcmp!==0)return gcmp;
+      return String(a.name||"").localeCompare(String(b.name||""), lang==="ar"?"ar":"en");
+    });
+  const totals=students.reduce((a,s)=>{
+    const tt=Number(s.tuition_total||0),tp=Number(s.tuition_paid||0),ow=Math.max(0,tt-tp);
+    a.total+=tt;a.paid+=tp;a.owed+=ow;return a;
+  },{total:0,paid:0,owed:0});
+  const setMoney=(id,key,value)=>{
+    const clean=Math.max(0,Number(value||0));
+    setStudents(prev=>prev.map(s=>s.id===id?{...s,[key]:clean}:s));
+  };
+  const saveMoney=async s=>{
+    setSavingId(s.id);
+    const r=await sb.upsertWithStatus("students",[{
+      id:s.id,
+      name:s.name,
+      email:s.email,
+      grade:s.grade,
+      phone:s.phone||null,
+      tuition_total:Number(s.tuition_total||0),
+      tuition_paid:Number(s.tuition_paid||0),
+    }],user?.accessToken||null);
+    setSavingId(null);
+    if(!r.ok){
+      setSync("fail");
+      setToast(`!Save failed: ${String(r.error||`status ${r.status}`).slice(0,120)}`);
+      return;
+    }
+    setSync("ok");
+    setToast(t.changesSaved);
+  };
+
+  return <PageShell T={T} t={t} themeMode={themeMode} onThemeChange={onThemeChange} lang={lang} onToggleLang={onToggleLang} onBack={onBack} title={t.accountant} icon="stats" sync={sync}
+    rightEl={<BtnO T={T} style={{padding:"7px 14px",fontSize:12}} onClick={onSignOut}><Ic n="signout" size={14} color={T.textSub}/>{t.signOut}</BtnO>}>
+    {toast&&<Toast msg={toast} onDone={()=>setToast("")} T={T}/>}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,minmax(140px,1fr))",gap:10,marginBottom:16}}>
+      <Card T={T} style={{padding:14}}><div style={{fontSize:11,color:T.textMuted,marginBottom:4}}>{t.tuitionTotal}</div><div style={{fontSize:24,fontWeight:800}}>{totals.total}</div></Card>
+      <Card T={T} style={{padding:14}}><div style={{fontSize:11,color:T.textMuted,marginBottom:4}}>{t.tuitionPaid}</div><div style={{fontSize:24,fontWeight:800,color:T.success}}>{totals.paid}</div></Card>
+      <Card T={T} style={{padding:14}}><div style={{fontSize:11,color:T.textMuted,marginBottom:4}}>{t.tuitionOwed}</div><div style={{fontSize:24,fontWeight:800,color:T.warn}}>{totals.owed}</div></Card>
+    </div>
+    <Card T={T} style={{padding:12,marginBottom:12}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"220px",gap:10,alignItems:"end"}}>
+        <div>
+          <Lbl T={T}>{t.grade}</Lbl>
+          <Sel T={T} value={selectedGrade} onChange={e=>setSelectedGrade(e.target.value)}>
+            <option value="all">{t.allGrades}</option>
+            {gradeOptions.map(g=><option key={g} value={g}>{g}</option>)}
+          </Sel>
+        </div>
+      </div>
+    </Card>
+    <Card T={T}>
+      {isMobile?<div style={{display:"grid",gap:8}}>
+        {shownStudents.map(s=><div key={s.id} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:12}}>
+          <div style={{fontSize:13,fontWeight:700,marginBottom:2}}>{s.name} <span style={{fontWeight:600,color:T.textSub}}>({s.grade||"—"})</span></div>
+          <div style={{fontSize:12,color:T.textSub,marginBottom:8}}>{s.grade}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+            <div><Lbl T={T}>{t.tuitionTotal}</Lbl><Inp T={T} type="number" min="0" value={Number(s.tuition_total||0)} onChange={e=>setMoney(s.id,"tuition_total",e.target.value)}/></div>
+            <div><Lbl T={T}>{t.tuitionPaid}</Lbl><Inp T={T} type="number" min="0" value={Number(s.tuition_paid||0)} onChange={e=>setMoney(s.id,"tuition_paid",e.target.value)}/></div>
+          </div>
+          <div style={{fontSize:12,color:T.warn,marginBottom:8}}>{t.tuitionOwed}: {Math.max(0,Number(s.tuition_total||0)-Number(s.tuition_paid||0))}</div>
+          <BtnP T={T} onClick={()=>saveMoney(s)} style={{width:"100%",padding:"8px 12px",fontSize:12}}>{savingId===s.id?t.save:<><Ic n="save" size={12} color={T.accentInv}/>{t.save}</>}</BtnP>
+        </div>)}
+      </div>:<div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.grade}</TH><TH T={T}>{t.tuitionTotal}</TH><TH T={T}>{t.tuitionPaid}</TH><TH T={T}>{t.tuitionOwed}</TH><TH T={T}/></tr></thead>
+          <tbody>{shownStudents.map(s=><tr key={s.id}><TD T={T} bold>{s.name} <span style={{fontWeight:600,color:T.textSub}}>({s.grade||"—"})</span></TD><TD T={T}>{s.grade}</TD><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><Inp T={T} type="number" min="0" value={Number(s.tuition_total||0)} onChange={e=>setMoney(s.id,"tuition_total",e.target.value)} style={{maxWidth:120}}/></td><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><Inp T={T} type="number" min="0" value={Number(s.tuition_paid||0)} onChange={e=>setMoney(s.id,"tuition_paid",e.target.value)} style={{maxWidth:120}}/></td><TD T={T} color={T.warn}>{Math.max(0,Number(s.tuition_total||0)-Number(s.tuition_paid||0))}</TD><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><BtnP T={T} onClick={()=>saveMoney(s)} style={{padding:"6px 12px",fontSize:12,minWidth:78}}>{savingId===s.id?t.save:<><Ic n="save" size={12} color={T.accentInv}/>{t.save}</>}</BtnP></td></tr>)}</tbody>
+        </table>
+      </div>}
+    </Card>
   </PageShell>;
 }
 
@@ -776,43 +1876,124 @@ function BusDriverDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLa
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 export default function App(){
+  const readLS=(k,fallback)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):fallback;}catch{return fallback;}};
   const[themeMode,setThemeMode]=useState("dark");
   const[lang,setLang]=useState("ar");
-  const[creds,setCreds]=useState(DEFAULT_CREDS);
-  const[periods,setPeriods]=useState(DEFAULT_PERIODS);
+  const[creds,setCreds]=useState(()=>readLS("sms_creds",DEFAULT_CREDS));
+  const[periods,setPeriods]=useState(()=>readLS("sms_periods",DEFAULT_PERIODS));
   const[grades,setGrades]=useState(()=>initGrades());
-  const[subjects,setSubjects]=useState([
+  const[subjects,setSubjects]=useState(()=>readLS("sms_subjects",[
     {id:"math",  label_ar:"رياضيات", label_en:"Math"},
     {id:"science",label_ar:"علوم",   label_en:"Science"},
     {id:"english",label_ar:"إنجليزي",label_en:"English"},
     {id:"history",label_ar:"تاريخ",  label_en:"History"},
     {id:"art",   label_ar:"فنون",   label_en:"Art"},
-  ]);
+  ]));
+  useEffect(()=>{try{localStorage.setItem("sms_creds",JSON.stringify(creds));}catch{}},[creds]);
+  useEffect(()=>{try{localStorage.setItem("sms_subjects",JSON.stringify(subjects));}catch{}},[subjects]);
+  useEffect(()=>{try{localStorage.setItem("sms_periods",JSON.stringify(periods));}catch{}},[periods]);
   useEffect(()=>{
     let alive=true;
-    async function loadSubjects(){
-      const dSub=await sb.get("subjects","?order=created_at.asc");
+    async function loadBootData(){
+      const[dSub,dUsers,dPeriods,dGrades]=await Promise.all([
+        sb.get("subjects","?order=created_at.asc"),
+        sb.get("app_users","?select=email,name,role,phone,grade,subject,bus_number,route&order=created_at.asc"),
+        sb.get("grade_periods","?order=created_at.asc"),
+        sb.get("grades","?select=student_id,period_id,scores"),
+      ]);
       if(alive&&dSub&&dSub.length>0){
         setSubjects(dSub.map(s=>({id:s.id,label_ar:s.label_ar,label_en:s.label_en})));
       }
+      if(alive&&dUsers&&dUsers.length>0){
+        const mapped=Object.fromEntries(dUsers.map(u=>[u.email,{
+          name:u.name||u.email,
+          role:u.role||"teacher",
+          metadata:{
+            phone:u.phone||"",
+            grade:u.grade||null,
+            subject:u.subject||null,
+            busNumber:u.bus_number||null,
+            route:u.route||null,
+          }
+        }]));
+        setCreds(mapped);
+      }
+      if(alive&&dPeriods&&dPeriods.length>0){
+        setPeriods(dPeriods.map(p=>({id:p.id,label:p.label})));
+      }
+      if(alive&&dGrades&&dGrades.length>0){
+        const mapped={};
+        dGrades.forEach(g=>{
+          if(!mapped[g.student_id])mapped[g.student_id]={};
+          mapped[g.student_id][g.period_id]=g.scores||{};
+        });
+        setGrades(prev=>({...prev,...mapped}));
+      }
     }
-    loadSubjects();
+    loadBootData();
     return()=>{alive=false;};
   },[]);
-  const getSaved=()=>{try{const s=sessionStorage.getItem("sms_user");return s?JSON.parse(s):null;}catch{return null;}};
+  const getSaved=()=>{
+    try{
+      const s=localStorage.getItem("sms_user")||sessionStorage.getItem("sms_user");
+      return s?JSON.parse(s):null;
+    }catch{return null;}
+  };
   const[user,setUser]=useState(()=>getSaved());
-  const[page,setPage]=useState(()=>{const s=getSaved();if(!s)return"login";if(s.role==="teacher")return"teacher";if(s.role==="student")return"student";if(s.role==="bus_driver")return"bus-driver";return"home";});
-  const login=(u,keep)=>{setUser(u);if(keep){try{sessionStorage.setItem("sms_user",JSON.stringify(u));}catch{}}if(u.role==="admin")setPage("home");else if(u.role==="teacher")setPage("teacher");else if(u.role==="student")setPage("student");else if(u.role==="bus_driver")setPage("bus-driver");else setPage("home");};
-  const logout=()=>{try{sessionStorage.removeItem("sms_user");}catch{}setUser(null);setPage("login");};
+  const[page,setPage]=useState(()=>{const s=getSaved();if(!s)return"login";if(s.role==="teacher")return"teacher";if(s.role==="student")return"student";if(s.role==="accountant")return"accountant";if(s.role==="bus_driver")return"bus-driver";return"home";});
+  const popSyncRef=useRef(false);
+  const resolveBackPage=(current,role)=>{
+    if(current==="admin")return "home";
+    if(current==="home")return "login";
+    if(current==="teacher"||current==="student"||current==="accountant"||current==="bus-driver"){
+      return role==="admin"?"home":"login";
+    }
+    return "login";
+  };
+
+  useEffect(()=>{
+    if(typeof window==="undefined")return;
+    const onPop=(e)=>{
+      popSyncRef.current=true;
+      const target=e?.state?.appPage;
+      if(typeof target==="string"){
+        setPage(target);
+        return;
+      }
+      setPage(prev=>resolveBackPage(prev,user?.role||null));
+    };
+    window.addEventListener("popstate",onPop);
+    return ()=>window.removeEventListener("popstate",onPop);
+  },[user?.role]);
+
+  useEffect(()=>{
+    if(typeof window==="undefined")return;
+    const state={appPage:page};
+    if(!window.history.state?.appPage){
+      window.history.replaceState(state,"");
+      return;
+    }
+    if(popSyncRef.current){
+      popSyncRef.current=false;
+      return;
+    }
+    if(window.history.state?.appPage!==page){
+      window.history.pushState(state,"");
+    }
+  },[page]);
+
+  const login=(u)=>{setUser(u);try{localStorage.setItem("sms_user",JSON.stringify(u));sessionStorage.setItem("sms_user",JSON.stringify(u));}catch{}if(u.role==="admin")setPage("home");else if(u.role==="teacher")setPage("teacher");else if(u.role==="student")setPage("student");else if(u.role==="accountant")setPage("accountant");else if(u.role==="bus_driver")setPage("bus-driver");else setPage("home");};
+  const logout=()=>{try{localStorage.removeItem("sms_user");sessionStorage.removeItem("sms_user");}catch{}setUser(null);setPage("login");};
   const sh={themeMode,onThemeChange:setThemeMode,lang,onToggleLang:()=>setLang(l=>l==="ar"?"en":"ar")};
   if(!user||page==="login")return <Login {...sh} onLogin={login} creds={creds}/>;
   const dp={...sh,user,onBack:user?.role==="admin"?()=>setPage("home"):null,onSignOut:logout};
   if(page==="home")      return <Home {...sh} user={user} onNavigate={setPage} onSignOut={logout}/>;
-  if(page==="admin")     return <AdminDashboard {...sh} onBack={()=>setPage("home")} creds={creds} onCredsChange={setCreds} gradePeriods={periods} onPeriodsChange={setPeriods} studentGrades={grades} onStudentGradesChange={setGrades} subjects={subjects} onSubjectsChange={setSubjects}/>;
+  if(page==="admin")     return <AdminDashboard {...sh} user={user} onBack={()=>setPage("home")} creds={creds} onCredsChange={setCreds} gradePeriods={periods} onPeriodsChange={setPeriods} studentGrades={grades} onStudentGradesChange={setGrades} subjects={subjects} onSubjectsChange={setSubjects}/>;
   if(page==="teacher")   return <TeacherDashboard {...dp} gradePeriods={periods} studentGrades={grades} onStudentGradesChange={setGrades} subjects={subjects}/>;
   if(page==="student")   return <StudentDashboard {...dp} gradePeriods={periods} studentGrades={grades} subjects={subjects}/>;
+  if(page==="accountant")return <AccountantDashboard {...dp}/>;
   if(page==="bus-driver")return <BusDriverDashboard {...dp}/>;
-  return null;
+  return <Login {...sh} onLogin={login} creds={creds}/>;
 
   
 }

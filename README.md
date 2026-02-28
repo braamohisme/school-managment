@@ -7,6 +7,7 @@ Copy `.env.example` to `.env` and set:
 - `REACT_APP_SUPABASE_KEY` (anon key only)
 - `VITE_SUPABASE_URL` (recommended for Vite/Vercel)
 - `VITE_SUPABASE_KEY` (recommended for Vite/Vercel, anon key only)
+- `SUPABASE_SERVICE_ROLE_KEY` (server-side only, for backend user creation API)
 
 Do not commit `.env`.
 
@@ -19,8 +20,11 @@ Run the SQL in:
 - `supabase/migrations/202602280004_legacy_attendance_year_month_fix.sql` (run this if your project already had an old `attendance` table)
 - `supabase/migrations/202602280006_legacy_attendance_primary_key_fix.sql` (run this if you see duplicate key on `attendance_pkey`)
 - `supabase/migrations/202602280007_subjects_table.sql`
+- `supabase/migrations/202602280009_grade_periods_table.sql`
+- `supabase/migrations/202602280011_app_users_authenticated_rw.sql`
 - `supabase/migrations/202602280002_seed_demo_data.sql`
 - `supabase/migrations/202602280008_seed_subjects.sql`
+- `supabase/migrations/202602280010_seed_grade_periods.sql`
 
 This creates the tables used by the app and enables RLS.
 
@@ -38,6 +42,7 @@ In Supabase Dashboard:
 ## 4) Authentication and roles
 Login uses Supabase Auth (`/auth/v1/token`).
 After sign-in, the app reads role/profile data from `app_users` table by email.
+Admin "Add credential" uses backend endpoint `POST /api/admin-create-user` to create Auth user + profile row.
 
 If env vars are missing, the UI switches to offline demo mode.
 
@@ -46,3 +51,6 @@ If env vars are missing, the UI switches to offline demo mode.
 2. Both SQL files were executed successfully.
 3. Auth users were created in Supabase Authentication.
 4. Use one of the credentials above to sign in.
+
+Session behavior:
+- App now persists logged-in user in `localStorage`, so refresh does not log out.

@@ -201,7 +201,7 @@ function Ic({ n, size=16, color="currentColor" }) {
 // ── Translations ──────────────────────────────────────────────────────────────
 const TR = {
   ar:{
-    dir:"rtl",appName:"نظام إدارة المدرسة",signIn:"سجّل دخولك للمتابعة",
+    dir:"rtl",appName:"مدرسة زهور العراق الاهلية",signIn:"سجّل دخولك للمتابعة",
     email:"البريد الإلكتروني",password:"كلمة المرور",signInBtn:"دخول",signingIn:"جارٍ الدخول...",
     keepLoggedIn:"ابقَ متصلاً",demoAccounts:"حسابات تجريبية",
     invalidCreds:"بريد إلكتروني أو كلمة مرور غير صحيحة.",
@@ -257,7 +257,7 @@ const TR = {
     subjectAdded:"تمت إضافة المادة.",subjectDeleted:"تم حذف المادة.",gradeForTeacher:"الصف المسؤول",
   },
   en:{
-    dir:"ltr",appName:"School Management",signIn:"Sign in to continue",
+    dir:"ltr",appName:"zhoor al iraq private school",signIn:"Sign in to continue",
     email:"Email",password:"Password",signInBtn:"Sign In",signingIn:"Signing in...",
     keepLoggedIn:"Keep me logged in",demoAccounts:"Demo accounts",
     invalidCreds:"Invalid credentials.",accessDenied:"Access denied.",
@@ -311,6 +311,16 @@ const TR = {
     subjectsSection:"Subjects",addSubject:"Add subject",subjectName:"Subject name",
     subjectAdded:"Subject added.",subjectDeleted:"Subject removed.",gradeForTeacher:"Assigned Grade",
   }
+};
+
+const SCHOOL_LOGO_SRC="/logo2.png";
+const SCHOOL_LOGO_FALLBACK="/logo.jpg";
+const SCHOOL_NAME_AR="مدرسة زهور العراق الاهلية";
+const SCHOOL_NAME_EN="Zhoor Al-iraq private school";
+const SOCIAL_LINKS={
+  facebook:"https://www.facebook.com/profile.php?id=100063930190683",
+  phone:"tel:07710379919",
+  location:"https://maps.app.goo.gl/G9VqwDkP88mocFQ37",
 };
 
 // ── Static data ───────────────────────────────────────────────────────────────
@@ -418,18 +428,61 @@ function TH({children,center,T}){return <th style={{padding:"9px 14px",textAlign
 function TD({children,bold,center,color,T}){return <td style={{padding:"12px 14px",fontSize:13,fontWeight:bold?600:400,color:color||(bold?T.text:T.textSub),textAlign:center?"center":"right",borderBottom:`1px solid ${T.border}`}}>{children}</td>;}
 function Divider({T}){return <div style={{height:1,background:T.border,margin:"20px 0"}}/>;}
 
-function InfoCard({T,name,icon,details}){
-  return <Card T={T} style={{marginBottom:22}}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}><div style={{width:42,height:42,borderRadius:10,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center"}}><Ic n={icon||"user"} size={20} color={T.textSub}/></div><div style={{fontWeight:800,fontSize:17}}>{name}</div></div><div style={{display:"flex",flexWrap:"wrap",gap:"6px 28px"}}>{details.map((d,i)=><span key={i} style={{fontSize:12,color:T.textSub,display:"flex",alignItems:"center",gap:5}}>{d.icon&&<Ic n={d.icon} size={12} color={T.textMuted}/>}{d.label&&<span style={{fontWeight:600,color:T.textMuted,fontSize:11,textTransform:"uppercase",letterSpacing:"0.05em"}}>{d.label}:</span>}{d.value}</span>)}</div></Card>;
+function SchoolBrand({T,lang="ar",compact=false,animate=false,stacked=false}){
+  const isMobile=useIsMobile();
+  const primary=lang==="ar"?SCHOOL_NAME_AR:SCHOOL_NAME_EN;
+  const size=compact?(isMobile?40:48):(isMobile?84:120);
+  const titleSize=compact?(isMobile?11:13):(isMobile?16:20);
+  return <div style={{display:"flex",flexDirection:stacked?"column":"row",alignItems:"center",gap:compact?8:12,animation:animate?"brandFloat 4.8s ease-in-out infinite":"brandReveal .42s ease"}}>
+    <div style={{width:size,height:size,borderRadius:compact?10:16,overflow:"hidden",border:`1px solid ${T.border}`,background:T.surface,boxShadow:compact?"0 6px 16px rgba(0,0,0,.12)":"0 10px 24px rgba(0,0,0,.16)",flexShrink:0}}>
+      <img
+        src={SCHOOL_LOGO_SRC}
+        alt={primary}
+        style={{width:"100%",height:"100%",objectFit:"cover"}}
+        onError={e=>{
+          if(e.currentTarget.src.includes(SCHOOL_LOGO_FALLBACK))return;
+          e.currentTarget.src=SCHOOL_LOGO_FALLBACK;
+        }}
+      />
+    </div>
+    <div style={{lineHeight:1.2,textAlign:stacked?"center":"start",minWidth:0}}>
+      <div style={{fontSize:titleSize,fontWeight:800,color:T.text,whiteSpace:isMobile?"normal":"nowrap",wordBreak:"break-word"}}>{primary}</div>
+    </div>
+  </div>;
+}
+
+function SocialLinksFooter({T,lang="ar"}){
+  const isMobile=useIsMobile();
+  const items=[
+    ["Facebook",SOCIAL_LINKS.facebook,"facebook"],
+    [lang==="ar"?"الهاتف":"Phone",SOCIAL_LINKS.phone,"phone"],
+    [lang==="ar"?"الموقع":"Location",SOCIAL_LINKS.location,"map"],
+  ].filter(([,href])=>Boolean(href));
+  if(items.length===0)return null;
+  return <div style={{position:"fixed",left:isMobile?"50%":14,transform:isMobile?"translateX(-50%)":"none",bottom:isMobile?"max(10px, env(safe-area-inset-bottom))":"12px",zIndex:70,display:"flex",gap:8,flexWrap:"wrap",maxWidth:isMobile?"calc(100vw - 20px)":"calc(100vw - 28px)",justifyContent:isMobile?"center":"flex-start"}}>
+    {items.map(([name,href,icon])=><a key={name} href={href} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700,color:T.text,textDecoration:"none",padding:"7px 11px",background:`${T.card}E8`,backdropFilter:"blur(5px)",border:`1px solid ${T.border2}`,borderRadius:999,boxShadow:"0 8px 20px rgba(0,0,0,.12)"}}>
+      {icon==="facebook"
+        ? <span style={{width:16,height:16,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:T.textSub,border:`1px solid ${T.border2}`,lineHeight:1}}>f</span>
+        : <Ic n={icon} size={13} color={T.textSub}/>}
+      {!isMobile&&name}
+    </a>)}
+  </div>;
+}
+
+function InfoCard({T,name,icon,photoUrl,details}){
+  const hasPhoto=Boolean(photoUrl);
+  return <Card T={T} style={{marginBottom:22}}><div style={{display:"flex",alignItems:"center",gap:14,marginBottom:12}}><div style={{width:72,height:72,borderRadius:16,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>{hasPhoto?<img src={photoUrl} alt={name||"profile"} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<Ic n={icon||"user"} size={30} color={T.textSub}/>}</div><div style={{fontWeight:800,fontSize:19}}>{name}</div></div><div style={{display:"flex",flexWrap:"wrap",gap:"6px 28px"}}>{details.map((d,i)=><span key={i} style={{fontSize:12,color:T.textSub,display:"flex",alignItems:"center",gap:5}}>{d.icon&&<Ic n={d.icon} size={12} color={T.textMuted}/>}{d.label&&<span style={{fontWeight:600,color:T.textMuted,fontSize:11,textTransform:"uppercase",letterSpacing:"0.05em"}}>{d.label}:</span>}{d.value}</span>)}</div></Card>;
 }
 
 function PageShell({T,t,themeMode,onThemeChange,lang,onToggleLang,onBack,title,icon,children,rightEl,sync,wide=false}){
   const isMobile=useIsMobile();
   const shellW=isMobile?"100%":wide?"min(1680px, calc(100vw - 36px))":"1020px";
   return <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",direction:t.dir}}>
-    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes fadeInUp{0%{opacity:0;transform:translateY(5px)}100%{opacity:1;transform:translateY(0)}}@keyframes popIn{0%{opacity:0;transform:scale(.985)}100%{opacity:1;transform:scale(1)}}@keyframes fadeOverlay{0%{opacity:0}100%{opacity:1}} *{box-sizing:border-box}`}</style>
+    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes fadeInUp{0%{opacity:0;transform:translateY(5px)}100%{opacity:1;transform:translateY(0)}}@keyframes popIn{0%{opacity:0;transform:scale(.985)}100%{opacity:1;transform:scale(1)}}@keyframes fadeOverlay{0%{opacity:0}100%{opacity:1}}@keyframes brandFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}@keyframes brandReveal{0%{opacity:0;transform:translateY(4px)}100%{opacity:1;transform:translateY(0)}} *{box-sizing:border-box}`}</style>
     <div style={{padding:isMobile?"12px 14px":"16px 20px",borderBottom:`1px solid ${T.border}`,background:T.card,position:"sticky",top:0,zIndex:50,backdropFilter:"saturate(120%) blur(4px)"}}>
       <div style={{maxWidth:shellW,margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:isMobile?"flex-start":"center",gap:12,flexWrap:isMobile?"wrap":"nowrap"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <SchoolBrand T={T} lang={lang} compact={true}/>
           {onBack&&<BtnG T={T} onClick={onBack}><Ic n={t.dir==="rtl"?"fwd":"back"} size={16} color={T.textSub}/></BtnG>}
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             {icon&&<div style={{width:34,height:34,borderRadius:9,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center"}}><Ic n={icon} size={17} color={T.textSub}/></div>}
@@ -444,11 +497,25 @@ function PageShell({T,t,themeMode,onThemeChange,lang,onToggleLang,onBack,title,i
         </div>
       </div>
     </div>
-    <div style={{maxWidth:shellW,margin:"0 auto",padding:isMobile?"16px 14px calc(22px + env(safe-area-inset-bottom))":"24px 20px 28px"}}>{children}</div>
+    <div style={{maxWidth:shellW,margin:"0 auto",padding:isMobile?"16px 14px calc(74px + env(safe-area-inset-bottom))":"24px 20px 90px"}}>
+      {children}
+      <SocialLinksFooter T={T} lang={lang}/>
+    </div>
   </div>;
 }
 
 // ── Attendance Calendar ───────────────────────────────────────────────────────
+async function readImageAsDataUrl(file,maxBytes=2*1024*1024){
+  if(!file)return null;
+  if(file.size>maxBytes)throw new Error("too_large");
+  return await new Promise((resolve,reject)=>{
+    const fr=new FileReader();
+    fr.onload=()=>resolve(typeof fr.result==="string"?fr.result:null);
+    fr.onerror=()=>reject(new Error("read_failed"));
+    fr.readAsDataURL(file);
+  });
+}
+
 function AttendanceCalendar({T,t,editable=false,onSave,students=null,initAtt:iA=null,subjectKey=null,showStudentSelector=true}){
   const[selIdx,setSelIdx]=useState(MONTHS.length-1);
   const[selSid,setSelSid]=useState(students?.[0]?.id??null);
@@ -559,7 +626,7 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
         }
         const sess=signInRes.data;
         const fallback=u||{name:normalizedEmail,role:null,metadata:{}};
-        let fromDb=(await sb.get("app_users",`?email=eq.${esc(normalizedEmail)}&select=name,role,phone,grade,subject,bus_number,route&limit=1`,sess.access_token||null))?.[0];
+        let fromDb=(await sb.get("app_users",`?email=eq.${esc(normalizedEmail)}&select=name,role,phone,grade,subject,bus_number,route,photo_url&limit=1`,sess.access_token||null))?.[0];
         if(!fromDb&&u){
           // Self-heal: if Auth exists but app_users row is missing, create it from local approved-login cache.
           await sb.upsert("app_users",[{
@@ -571,8 +638,54 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
             subject:u.metadata?.subject||null,
             bus_number:u.metadata?.busNumber||null,
             route:u.metadata?.route||null,
+            photo_url:u.metadata?.photo_url||null,
           }],sess.access_token||null);
-          fromDb=(await sb.get("app_users",`?email=eq.${esc(normalizedEmail)}&select=name,role,phone,grade,subject,bus_number,route&limit=1`,sess.access_token||null))?.[0];
+          fromDb=(await sb.get("app_users",`?email=eq.${esc(normalizedEmail)}&select=name,role,phone,grade,subject,bus_number,route,photo_url&limit=1`,sess.access_token||null))?.[0];
+        }
+        if(!fromDb){
+          // Fallback self-heal: infer role from profile tables when approved-login cache is missing.
+          const [accRow,teachRow,studRow]=await Promise.all([
+            sb.get("accountants",`?email=eq.${esc(normalizedEmail)}&select=name,email,phone,photo_url&limit=1`,sess.access_token||null),
+            sb.get("teachers",`?email=eq.${esc(normalizedEmail)}&select=name,email,phone,subject,grade,photo_url&limit=1`,sess.access_token||null),
+            sb.get("students",`?email=eq.${esc(normalizedEmail)}&select=name,email,phone,grade,photo_url&limit=1`,sess.access_token||null),
+          ]);
+          const a=accRow?.[0]||null;
+          const tRow=teachRow?.[0]||null;
+          const sRow=studRow?.[0]||null;
+          const inferred=a?{
+            role:"accountant",
+            name:a.name||normalizedEmail,
+            phone:a.phone||null,
+            grade:null,
+            subject:null,
+            photo_url:a.photo_url||null,
+          }:tRow?{
+            role:"teacher",
+            name:tRow.name||normalizedEmail,
+            phone:tRow.phone||null,
+            grade:tRow.grade||null,
+            subject:tRow.subject||null,
+            photo_url:tRow.photo_url||null,
+          }:sRow?{
+            role:"student",
+            name:sRow.name||normalizedEmail,
+            phone:sRow.phone||null,
+            grade:sRow.grade||null,
+            subject:null,
+            photo_url:sRow.photo_url||null,
+          }:null;
+          if(inferred){
+            await sb.upsert("app_users",[{
+              email:normalizedEmail,
+              name:inferred.name,
+              role:inferred.role,
+              phone:inferred.phone,
+              grade:inferred.grade,
+              subject:inferred.subject,
+              photo_url:inferred.photo_url,
+            }],sess.access_token||null);
+            fromDb=(await sb.get("app_users",`?email=eq.${esc(normalizedEmail)}&select=name,role,phone,grade,subject,bus_number,route,photo_url&limit=1`,sess.access_token||null))?.[0];
+          }
         }
         const dbUser=fromDb?{
           name:fromDb.name||fallback.name||normalizedEmail,
@@ -584,6 +697,7 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
             subject:fromDb.subject??fallback.metadata?.subject,
             busNumber:fromDb.bus_number??fallback.metadata?.busNumber,
             route:fromDb.route??fallback.metadata?.route,
+            photo_url:fromDb.photo_url??fallback.metadata?.photo_url,
           },
         }:null;
         if(!dbUser&&!u){setErr(t.accessDenied);return;}
@@ -605,7 +719,7 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
     {icon:"clock",x:"50%",y:"87%",d:2.7},
   ];
   return <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",padding:20,direction:t.dir,position:"relative",overflow:"hidden"}}>
-    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes fadeInUp{0%{opacity:0;transform:translateY(5px)}100%{opacity:1;transform:translateY(0)}}@keyframes popIn{0%{opacity:0;transform:scale(.985)}100%{opacity:1;transform:scale(1)}}@keyframes fadeOverlay{0%{opacity:0}100%{opacity:1}}@keyframes floatSoft{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}} input::placeholder{color:${T.textMuted}} *{box-sizing:border-box}`}</style>
+    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes fadeInUp{0%{opacity:0;transform:translateY(5px)}100%{opacity:1;transform:translateY(0)}}@keyframes popIn{0%{opacity:0;transform:scale(.985)}100%{opacity:1;transform:scale(1)}}@keyframes fadeOverlay{0%{opacity:0}100%{opacity:1}}@keyframes floatSoft{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}@keyframes brandFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}@keyframes brandReveal{0%{opacity:0;transform:translateY(4px)}100%{opacity:1;transform:translateY(0)}} input::placeholder{color:${T.textMuted}} *{box-sizing:border-box}`}</style>
     {!isMobile&&deco.map((d,i)=><div key={`${themeMode}-${d.icon}-${i}`}
       onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-5px) scale(1.05)";e.currentTarget.style.boxShadow="0 14px 32px rgba(0,0,0,.18)";}}
       onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0) scale(1)";e.currentTarget.style.boxShadow="0 10px 30px rgba(0,0,0,.12)";}}
@@ -617,8 +731,9 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
     </div>
     <div style={{width:"100%",maxWidth:380}}>
       <div style={{marginBottom:32,textAlign:"center"}}>
-        <div style={{width:52,height:52,borderRadius:14,background:T.card,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}><Ic n="book" size={24} color={T.textSub}/></div>
-        <div style={{fontSize:22,fontWeight:800}}>{t.appName}</div>
+        <div style={{display:"flex",justifyContent:"center",marginBottom:14}}>
+          <SchoolBrand T={T} lang={lang} animate={true} stacked={true}/>
+        </div>
         <div style={{fontSize:14,color:T.textSub,marginTop:6}}>{t.signIn}</div>
       </div>
       <Card T={T} style={{padding:28}}>
@@ -629,6 +744,7 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
         {!SB_READY&&<div style={{fontSize:11,color:T.warn,marginBottom:10}}>Supabase env vars are missing. Running in offline demo mode.</div>}
         <BtnP T={T} style={{width:"100%",padding:"11px"}} onClick={submit}>{loading?t.signingIn:<><Ic n="signout" size={15} color={T.accentInv}/>{t.signInBtn}</>}</BtnP>
       </Card>
+      <SocialLinksFooter T={T} lang={lang}/>
     </div>
   </div>;
 }
@@ -649,8 +765,8 @@ function Home({user,onNavigate,onSignOut,themeMode,onThemeChange,lang,onToggleLa
     <div style={{padding:isMobile?"12px 14px":"18px 28px",borderBottom:`1px solid ${T.border}`,background:T.card}}>
       <div style={{maxWidth:isMobile?900:"min(1780px, calc(100vw - 56px))",margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:36,height:36,borderRadius:9,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center"}}><Ic n="book" size={18} color={T.textSub}/></div>
-          <div><div style={{fontSize:16,fontWeight:800}}>{t.appName}</div><div style={{fontSize:11,color:T.textSub}}>{t.welcome} {user.name}</div></div>
+          <SchoolBrand T={T} lang={lang} compact={true}/>
+          <div style={{fontSize:11,color:T.textSub}}>{t.welcome} {user.name}</div>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <LangToggle lang={lang} onToggle={onToggleLang} T={T}/>
@@ -668,6 +784,7 @@ function Home({user,onNavigate,onSignOut,themeMode,onThemeChange,lang,onToggleLa
           <div style={{fontSize:12,color:T.textMuted,display:"flex",alignItems:"center",gap:5}}><Ic n="fwd" size={12} color={T.textMuted}/>{t.access}</div>
         </div>)}
       </div>
+      <SocialLinksFooter T={T} lang={lang}/>
     </div>
   </div>;
 }
@@ -686,12 +803,12 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
   const SKEYS=subjects.map(s=>s.id);
   const blank=()=>Object.fromEntries(SKEYS.map(s=>[s,0]));
   const blankP=()=>Object.fromEntries(gradePeriods.map(p=>[p.id,blank()]));
-  const[ns,setNs]=useState({name:"",email:"",phone:"",grade:t.grades1to12[0],tuition_total:0,tuition_paid:0});
+  const[ns,setNs]=useState({name:"",email:"",phone:"",grade:t.grades1to12[0],tuition_total:0,tuition_paid:0,photo_url:""});
   const[nsG,setNsG]=useState(()=>blankP());
   const[nsCred,setNsCred]=useState({enabled:true,password:""});
-  const[nt,setNt]=useState({name:"",email:"",phone:"",subject:subjects[0]?.id||"math",grade:t.grades1to12[0]});
+  const[nt,setNt]=useState({name:"",email:"",phone:"",subject:subjects[0]?.id||"math",grade:t.grades1to12[0],photo_url:""});
   const[ntCred,setNtCred]=useState({enabled:true,password:""});
-  const[na,setNa]=useState({name:"",email:"",phone:""});
+  const[na,setNa]=useState({name:"",email:"",phone:"",photo_url:""});
   const[naCred,setNaCred]=useState({enabled:true,password:""});
   const[nc,setNc]=useState({email:"",password:"",name:"",role:"teacher",phone:""});
   const[np,setNp]=useState("");
@@ -707,17 +824,17 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
   useEffect(()=>{
     async function load(){
       const[dS,dT,dA,dSub,dUsers,dPeriods]=await Promise.all([
-        sb.get("students","?order=created_at.asc"),
-        sb.get("teachers","?order=created_at.asc"),
-        sb.get("accountants","?order=created_at.asc"),
-        sb.get("subjects","?order=created_at.asc"),
-        sb.get("app_users","?select=email,name,role,phone,grade,subject,bus_number,route&order=created_at.asc",user?.accessToken||null),
-        sb.get("grade_periods","?order=created_at.asc"),
+        sb.get("students","?order=created_at.asc",user?.accessToken||null),
+        sb.get("teachers","?order=created_at.asc",user?.accessToken||null),
+        sb.get("accountants","?order=created_at.asc",user?.accessToken||null),
+        sb.get("subjects","?order=created_at.asc",user?.accessToken||null),
+        sb.get("app_users","?select=email,name,role,phone,grade,subject,bus_number,route,photo_url&order=created_at.asc",user?.accessToken||null),
+        sb.get("grade_periods","?order=created_at.asc",user?.accessToken||null),
       ]);
-      if(dS&&dS.length>0){setStudents(dS.map(s=>({id:s.id,name:s.name,email:s.email,grade:s.grade,phone:s.phone||"",tuition_total:Number(s.tuition_total||0),tuition_paid:Number(s.tuition_paid||0)})));setSync("ok");}
+      if(dS&&dS.length>0){setStudents(dS.map(s=>({id:s.id,name:s.name,email:s.email,grade:s.grade,phone:s.phone||"",tuition_total:Number(s.tuition_total||0),tuition_paid:Number(s.tuition_paid||0),photo_url:s.photo_url||""})));setSync("ok");}
       else if(dS===null){setSync("fail");}
-      if(dT&&dT.length>0){setTeachers(dT.map(t=>({id:t.id,name:t.name,email:t.email,subject:t.subject,subjectDisplay:t.subject_display||t.subject,grade:t.grade||"",phone:t.phone||""})));}
-      if(dA&&dA.length>0){setAccountants(dA.map(a=>({id:a.id,name:a.name,email:a.email,phone:a.phone||""})));}
+      if(dT&&dT.length>0){setTeachers(dT.map(t=>({id:t.id,name:t.name,email:t.email,subject:t.subject,subjectDisplay:t.subject_display||t.subject,grade:t.grade||"",phone:t.phone||"",photo_url:t.photo_url||""})));}
+      if(dA&&dA.length>0){setAccountants(dA.map(a=>({id:a.id,name:a.name,email:a.email,phone:a.phone||"",photo_url:a.photo_url||""})));}
       if(dSub&&dSub.length>0){onSubjectsChange(dSub.map(s=>({id:s.id,label_ar:s.label_ar,label_en:s.label_en})));}
       if(dUsers&&dUsers.length>0){
         const mapped=Object.fromEntries(dUsers.map(u=>[u.email,{
@@ -729,16 +846,32 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
             subject:u.subject||null,
             busNumber:u.bus_number||null,
             route:u.route||null,
+            photo_url:u.photo_url||"",
           }
         }]));
-        onCredsChange(mapped);
+        onCredsChange(prev=>({...prev,...mapped}));
       }
       if(dPeriods&&dPeriods.length>0){
         onPeriodsChange(dPeriods.map(p=>({id:p.id,label:p.label})));
       }
     }
     load();
-  },[]);
+  },[user?.accessToken]);
+
+  const handlePhotoSelect=async(setter,file)=>{
+    if(!file)return;
+    try{
+      const data=await readImageAsDataUrl(file);
+      if(!data)throw new Error("read_failed");
+      setter(prev=>({...prev,photo_url:data}));
+    }catch(err){
+      if(String(err?.message||"").includes("too_large")){
+        setToast("!Image is too large. Please use a smaller file (max 2MB).");
+      }else{
+        setToast("!Could not read image file.");
+      }
+    }
+  };
 
   const addStudent=async()=>{
     if(!ns.name||!ns.email)return;
@@ -746,16 +879,16 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
     if(nsCred.enabled){
       const okAuth=await createAuthForApprovedLogin({email,password:nsCred.password,name:ns.name,role:"student",phone:ns.phone||"",grade:ns.grade||null});
       if(!okAuth)return;
-      onCredsChange(prev=>({...prev,[email]:{name:ns.name,role:"student",metadata:{phone:ns.phone||"",grade:ns.grade||null}}}));
+      onCredsChange(prev=>({...prev,[email]:{name:ns.name,role:"student",metadata:{phone:ns.phone||"",grade:ns.grade||null,photo_url:ns.photo_url||""}}}));
     }
     const id=`s${Date.now()}`;
     const newS={...ns,email,id};
     setStudents(p=>[...p,newS]);
     onStudentGradesChange(prev=>({...prev,[id]:nsG}));
-    setNs({name:"",email:"",phone:"",grade:t.grades1to12[0],tuition_total:0,tuition_paid:0});
+    setNs({name:"",email:"",phone:"",grade:t.grades1to12[0],tuition_total:0,tuition_paid:0,photo_url:""});
     setNsCred({enabled:true,password:""});
     setNsG(blankP()); setModal(null); setToast(t.studentAdded);
-    const ok=await sb.upsert("students",[{id,name:newS.name,email:newS.email,grade:newS.grade,phone:newS.phone||null,tuition_total:Number(newS.tuition_total||0),tuition_paid:Number(newS.tuition_paid||0)}]);
+    const ok=await sb.upsert("students",[{id,name:newS.name,email:newS.email,grade:newS.grade,phone:newS.phone||null,tuition_total:Number(newS.tuition_total||0),tuition_paid:Number(newS.tuition_paid||0),photo_url:newS.photo_url||null}],user?.accessToken||null);
     if(nsCred.enabled||creds[newS.email]){
       await sb.upsert("app_users",[{
         email:newS.email,
@@ -763,6 +896,7 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
         role:"student",
         phone:newS.phone||null,
         grade:newS.grade||null,
+        photo_url:newS.photo_url||null,
       }],user?.accessToken||null);
     }
     setSync(ok?"ok":"fail");
@@ -773,14 +907,14 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
     if(ntCred.enabled){
       const okAuth=await createAuthForApprovedLogin({email,password:ntCred.password,name:nt.name,role:"teacher",phone:nt.phone||"",grade:nt.grade||null,subject:nt.subject||null});
       if(!okAuth)return;
-      onCredsChange(prev=>({...prev,[email]:{name:nt.name,role:"teacher",metadata:{phone:nt.phone||"",subject:nt.subject||null}}}));
+      onCredsChange(prev=>({...prev,[email]:{name:nt.name,role:"teacher",metadata:{phone:nt.phone||"",subject:nt.subject||null,photo_url:nt.photo_url||""}}}));
     }
     const sl=SLABELS[SKEYS.indexOf(nt.subject)]||nt.subject;
     const id=`t${Date.now()}`;
     const newT={...nt,email,id,subjectDisplay:sl};
     setTeachers(p=>[...p,newT]);
-    setNt({name:"",email:"",phone:"",subject:subjects[0]?.id||"math",grade:t.grades1to12[0]});setNtCred({enabled:true,password:""});setModal(null);setToast(t.teacherAdded);
-    const ok=await sb.upsert("teachers",[{id,name:newT.name,email:newT.email,subject:newT.subject,subject_display:sl,grade:newT.grade,phone:newT.phone||null}]);
+    setNt({name:"",email:"",phone:"",subject:subjects[0]?.id||"math",grade:t.grades1to12[0],photo_url:""});setNtCred({enabled:true,password:""});setModal(null);setToast(t.teacherAdded);
+    const ok=await sb.upsert("teachers",[{id,name:newT.name,email:newT.email,subject:newT.subject,subject_display:sl,grade:newT.grade,phone:newT.phone||null,photo_url:newT.photo_url||null}],user?.accessToken||null);
     if(ntCred.enabled||creds[newT.email]){
       await sb.upsert("app_users",[{
         email:newT.email,
@@ -789,6 +923,7 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
         phone:newT.phone||null,
         grade:newT.grade||null,
         subject:newT.subject||null,
+        photo_url:newT.photo_url||null,
       }],user?.accessToken||null);
     }
     setSync(ok?"ok":"fail");
@@ -799,13 +934,13 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
     const id=`subj_${Date.now()}`;
     onSubjectsChange(prev=>[...prev,{id,label_ar:arL,label_en:enL}]);
     setNewSubj({label_ar:"",label_en:""});setModal(null);setToast(t.subjectAdded);
-    const ok=await sb.upsert("subjects",[{id,label_ar:arL,label_en:enL}]);
+    const ok=await sb.upsert("subjects",[{id,label_ar:arL,label_en:enL}],user?.accessToken||null);
     setSync(ok?"ok":"fail");
   };
   const delSubject=async id=>{
     onSubjectsChange(prev=>prev.filter(s=>s.id!==id));
     setToast(t.subjectDeleted);
-    const ok=await sb.del("subjects",{id});
+    const ok=await sb.del("subjects",{id},user?.accessToken||null);
     setSync(ok?"ok":"fail");
   };
   const createAuthForApprovedLogin=async({email,password,name,role,phone,grade=null,subject=null,busNumber=null,route=null})=>{
@@ -891,10 +1026,10 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
     const email=String(nc.email).trim().toLowerCase();
     const okAuth=await createAuthForApprovedLogin({email,password:nc.password,name:nc.name,role:nc.role,phone:nc.phone||""});
     if(!okAuth)return;
-    onCredsChange(prev=>({...prev,[email]:{name:nc.name,role:nc.role,metadata:{phone:nc.phone}}}));
+    onCredsChange(prev=>({...prev,[email]:{name:nc.name,role:nc.role,metadata:{phone:nc.phone,photo_url:""}}}));
     setNc({email:"",password:"",name:"",role:"teacher",phone:""});
     setModal(null);setToast(t.credAdded);
-    const ok=await sb.upsert("app_users",[{email,name:nc.name,role:nc.role,phone:nc.phone||null}],user?.accessToken||null);
+    const ok=await sb.upsert("app_users",[{email,name:nc.name,role:nc.role,phone:nc.phone||null,photo_url:null}],user?.accessToken||null);
     setSync(ok?"ok":"fail");
   };
   const addPeriod=async()=>{
@@ -904,26 +1039,26 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
     onPeriodsChange(prev=>[...prev,{id,label}]);
     onStudentGradesChange(prev=>{const u={...prev};Object.keys(u).forEach(sid=>{u[sid]={...u[sid],[id]:blank()};});return u;});
     setNp("");setToast(t.periodAdded);
-    const ok=await sb.upsert("grade_periods",[{id,label}]);
+    const ok=await sb.upsert("grade_periods",[{id,label}],user?.accessToken||null);
     setSync(ok?"ok":"fail");
   };
   const delPeriod=async pid=>{
     onPeriodsChange(prev=>prev.filter(p=>p.id!==pid));
     onStudentGradesChange(prev=>{const u={...prev};Object.keys(u).forEach(sid=>{const g={...u[sid]};delete g[pid];u[sid]=g;});return u;});
     setToast(t.periodDeleted);
-    const ok=await sb.del("grade_periods",{id:pid});
+    const ok=await sb.del("grade_periods",{id:pid},user?.accessToken||null);
     setSync(ok?"ok":"fail");
   };
   const delStudent=async s=>{
     setStudents(prev=>prev.filter(x=>x.id!==s.id));
-    const ok=await sb.del("students",{id:s.id});
+    const ok=await sb.del("students",{id:s.id},user?.accessToken||null);
     await sb.del("app_users",{email:s.email},user?.accessToken||null);
     onCredsChange(prev=>{const u={...prev};delete u[s.email];return u;});
     setSync(ok?"ok":"fail");
   };
   const delTeacher=async tt=>{
     setTeachers(prev=>prev.filter(x=>x.id!==tt.id));
-    const ok=await sb.del("teachers",{id:tt.id});
+    const ok=await sb.del("teachers",{id:tt.id},user?.accessToken||null);
     await sb.del("app_users",{email:tt.email},user?.accessToken||null);
     onCredsChange(prev=>{const u={...prev};delete u[tt.email];return u;});
     setSync(ok?"ok":"fail");
@@ -934,17 +1069,40 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
     if(naCred.enabled){
       const okAuth=await createAuthForApprovedLogin({email,password:naCred.password,name:na.name,role:"accountant",phone:na.phone||""});
       if(!okAuth)return;
-      onCredsChange(prev=>({...prev,[email]:{name:na.name,role:"accountant",metadata:{phone:na.phone||""}}}));
+      onCredsChange(prev=>({...prev,[email]:{name:na.name,role:"accountant",metadata:{phone:na.phone||"",photo_url:na.photo_url||""}}}));
     }
     const id=`a${Date.now()}`;
-    const row={id,name:na.name,email,phone:na.phone||""};
+    const row={id,name:na.name,email,phone:na.phone||"",photo_url:na.photo_url||""};
+    const accRes=await sb.upsertWithStatus("accountants",[{
+      id:row.id,
+      name:row.name,
+      email:row.email,
+      phone:row.phone||null,
+      photo_url:row.photo_url||null,
+    }],user?.accessToken||null);
+    if(!accRes.ok){
+      setSync("fail");
+      setToast(`!Accountant save failed: ${String(accRes.error||`status ${accRes.status}`).slice(0,120)}`);
+      return;
+    }
+    const userRes=await sb.upsertWithStatus("app_users",[{
+      email:row.email,
+      name:row.name,
+      role:"accountant",
+      phone:row.phone||null,
+      photo_url:row.photo_url||null,
+    }],user?.accessToken||null);
+    if(!userRes.ok){
+      setSync("fail");
+      setToast(`!Approved login save failed: ${String(userRes.error||`status ${userRes.status}`).slice(0,120)}`);
+      return;
+    }
     setAccountants(prev=>[...prev,row]);
-    setNa({name:"",email:"",phone:""});
+    setNa({name:"",email:"",phone:"",photo_url:""});
     setNaCred({enabled:true,password:""});
     setModal(null);
-    const ok=await sb.upsert("accountants",[{id:row.id,name:row.name,email:row.email,phone:row.phone||null}],user?.accessToken||null);
-    await sb.upsert("app_users",[{email:row.email,name:row.name,role:"accountant",phone:row.phone||null}],user?.accessToken||null);
-    setSync(ok?"ok":"fail");
+    setSync("ok");
+    setToast(t.changesSaved);
   };
   const openEditAccountant=a=>{
     setEditAccountant({...a});
@@ -972,7 +1130,7 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
       if(!okAuth)return;
       onCredsChange(prev=>({
         ...prev,
-        [email]:{name:editAccountant.name,role:"accountant",metadata:{phone:editAccountant.phone||""}}
+        [email]:{name:editAccountant.name,role:"accountant",metadata:{phone:editAccountant.phone||"",photo_url:editAccountant.photo_url||""}}
       }));
     }else if(editAccountantLogin.has){
       onCredsChange(prev=>({
@@ -981,7 +1139,7 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
           ...(prev[email]||{}),
           name:editAccountant.name,
           role:"accountant",
-          metadata:{...((prev[email]?.metadata)||{}),phone:editAccountant.phone||""},
+          metadata:{...((prev[email]?.metadata)||{}),phone:editAccountant.phone||"",photo_url:editAccountant.photo_url||""},
         }
       }));
     }
@@ -991,6 +1149,7 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
       name:editAccountant.name,
       email,
       phone:editAccountant.phone||null,
+      photo_url:editAccountant.photo_url||null,
     }],user?.accessToken||null);
     if(old.email!==email){
       await sb.del("app_users",{email:old.email},user?.accessToken||null);
@@ -1000,6 +1159,7 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
       name:editAccountant.name,
       role:"accountant",
       phone:editAccountant.phone||null,
+      photo_url:editAccountant.photo_url||null,
     }],user?.accessToken||null);
     if(old.email!==email){
       onCredsChange(prev=>{
@@ -1089,13 +1249,14 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
         grade:editStudent.grade||null,
       });
       if(!okAuth)return;
-      onCredsChange(prev=>({...prev,[email]:{name:editStudent.name,role:"student",metadata:{phone:editStudent.phone||"",grade:editStudent.grade||null}}}));
+      onCredsChange(prev=>({...prev,[email]:{name:editStudent.name,role:"student",metadata:{phone:editStudent.phone||"",grade:editStudent.grade||null,photo_url:editStudent.photo_url||""}}}));
       const okUser=await sb.upsert("app_users",[{
         email,
         name:editStudent.name,
         role:"student",
         phone:editStudent.phone||null,
         grade:editStudent.grade||null,
+        photo_url:editStudent.photo_url||null,
       }],user?.accessToken||null);
       setSync(okUser?"ok":"fail");
     }else if(editStudentLogin.has){
@@ -1105,7 +1266,7 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
           ...(prev[email]||{}),
           name:editStudent.name,
           role:"student",
-          metadata:{...((prev[email]?.metadata)||{}),phone:editStudent.phone||"",grade:editStudent.grade||null},
+          metadata:{...((prev[email]?.metadata)||{}),phone:editStudent.phone||"",grade:editStudent.grade||null,photo_url:editStudent.photo_url||""},
         }
       }));
       const okUser=await sb.upsert("app_users",[{
@@ -1114,6 +1275,7 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
         role:"student",
         phone:editStudent.phone||null,
         grade:editStudent.grade||null,
+        photo_url:editStudent.photo_url||null,
       }],user?.accessToken||null);
       setSync(okUser?"ok":"fail");
     }
@@ -1126,7 +1288,8 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
       phone:editStudent.phone||null,
       tuition_total:Number(editStudent.tuition_total||0),
       tuition_paid:Number(editStudent.tuition_paid||0),
-    }]);
+      photo_url:editStudent.photo_url||null,
+    }],user?.accessToken||null);
     setSync(ok?"ok":"fail");
     setToast(t.changesSaved);
     setModal(null);
@@ -1159,13 +1322,14 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
         subject:editTeacher.subject||null,
       });
       if(!okAuth)return;
-      onCredsChange(prev=>({...prev,[email]:{name:editTeacher.name,role:"teacher",metadata:{phone:editTeacher.phone||"",subject:editTeacher.subject||null}}}));
+      onCredsChange(prev=>({...prev,[email]:{name:editTeacher.name,role:"teacher",metadata:{phone:editTeacher.phone||"",subject:editTeacher.subject||null,photo_url:editTeacher.photo_url||""}}}));
       const okUser=await sb.upsert("app_users",[{
         email,
         name:editTeacher.name,
         role:"teacher",
         phone:editTeacher.phone||null,
         subject:editTeacher.subject||null,
+        photo_url:editTeacher.photo_url||null,
       }],user?.accessToken||null);
       setSync(okUser?"ok":"fail");
     }else if(editTeacherLogin.has){
@@ -1175,7 +1339,7 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
           ...(prev[email]||{}),
           name:editTeacher.name,
           role:"teacher",
-          metadata:{...((prev[email]?.metadata)||{}),phone:editTeacher.phone||"",subject:editTeacher.subject||null},
+          metadata:{...((prev[email]?.metadata)||{}),phone:editTeacher.phone||"",subject:editTeacher.subject||null,photo_url:editTeacher.photo_url||""},
         }
       }));
       const okUser=await sb.upsert("app_users",[{
@@ -1184,6 +1348,7 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
         role:"teacher",
         phone:editTeacher.phone||null,
         subject:editTeacher.subject||null,
+        photo_url:editTeacher.photo_url||null,
       }],user?.accessToken||null);
       setSync(okUser?"ok":"fail");
     }
@@ -1197,7 +1362,8 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
       subject_display:sl,
       grade:editTeacher.grade||null,
       phone:editTeacher.phone||null,
-    }]);
+      photo_url:editTeacher.photo_url||null,
+    }],user?.accessToken||null);
     setSync(ok?"ok":"fail");
     setToast(t.changesSaved);
     setModal(null);
@@ -1267,17 +1433,17 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
 
     <Card T={T} style={{marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:700}}><Ic n="stats" size={16} color={T.textSub}/>{t.accountants}</div><BtnO T={T} style={{padding:"6px 14px",fontSize:12}} onClick={()=>setModal("accountant")}><Ic n="plus" size={13} color={T.text}/>{t.addAccountant}</BtnO></div>
-      {isMobile?<div style={{display:"grid",gap:8}}>{accountants.map(a=><div key={a.id} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:12}}><div style={{fontSize:13,fontWeight:700}}>{a.name}</div><div style={{fontSize:12,color:T.textSub}}>{a.email}</div><div style={{fontSize:12,color:T.textSub}}>{a.phone||"—"}</div><div style={{display:"flex",gap:6,marginTop:8}}><button onClick={()=>openEditAccountant(a)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delAccountant(a)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></div>)}</div>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.phone}</TH><TH T={T}/></tr></thead><tbody>{accountants.map(a=><tr key={a.id}><TD T={T} bold>{a.name}</TD><TD T={T}>{a.email}</TD><TD T={T}>{a.phone||"—"}</TD><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",gap:6}}><button onClick={()=>openEditAccountant(a)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delAccountant(a)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></td></tr>)}</tbody></table></div>}
+      {isMobile?<div style={{display:"grid",gap:8}}>{accountants.map(a=><div key={a.id} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:12}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>{a.photo_url?<img src={a.photo_url} alt={a.name} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/>:<div style={{width:26,height:26,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,border:`1px solid ${T.border}`}}><Ic n="user" size={12} color={T.textSub}/></div>}<div style={{fontSize:13,fontWeight:700}}>{a.name}</div></div><div style={{fontSize:12,color:T.textSub}}>{a.email}</div><div style={{fontSize:12,color:T.textSub}}>{a.phone||"—"}</div><div style={{display:"flex",gap:6,marginTop:8}}><button onClick={()=>openEditAccountant(a)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delAccountant(a)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></div>)}</div>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.phone}</TH><TH T={T}/></tr></thead><tbody>{accountants.map(a=><tr key={a.id}><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",alignItems:"center",gap:8}}>{a.photo_url?<img src={a.photo_url} alt={a.name} style={{width:24,height:24,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/>:<div style={{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,border:`1px solid ${T.border}`}}><Ic n="user" size={11} color={T.textSub}/></div>}<span style={{fontSize:13,fontWeight:600,color:T.text}}>{a.name}</span></div></td><TD T={T}>{a.email}</TD><TD T={T}>{a.phone||"—"}</TD><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",gap:6}}><button onClick={()=>openEditAccountant(a)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delAccountant(a)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></td></tr>)}</tbody></table></div>}
     </Card>
 
     <Card T={T} style={{marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:700}}><Ic n="users" size={16} color={T.textSub}/>{t.students}</div><BtnO T={T} style={{padding:"6px 14px",fontSize:12}} onClick={()=>setModal("student")}><Ic n="plus" size={13} color={T.text}/>{t.addStudent}</BtnO></div>
-      {isMobile?<div style={{display:"grid",gap:8}}>{students.map(s=><div key={s.id} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:12}}><div style={{fontSize:13,fontWeight:700}}>{s.name}</div><div style={{fontSize:12,color:T.textSub}}>{s.email}</div><div style={{fontSize:12,color:T.textSub}}>{s.phone||"—"}</div><div style={{fontSize:12,color:T.textSub}}>{s.grade}</div><div style={{fontSize:12,color:T.textSub}}>{t.tuitionTotal}: {Number(s.tuition_total||0)}</div><div style={{fontSize:12,color:T.textSub}}>{t.tuitionPaid}: {Number(s.tuition_paid||0)}</div><div style={{fontSize:12,color:T.textSub,marginBottom:8}}>{t.tuitionOwed}: {Math.max(0,Number(s.tuition_total||0)-Number(s.tuition_paid||0))}</div><div style={{display:"flex",gap:6}}><button onClick={()=>openEditStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></div>)}</div>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.phone}</TH><TH T={T}>{t.grade}</TH><TH T={T}>{t.tuitionTotal}</TH><TH T={T}>{t.tuitionPaid}</TH><TH T={T}>{t.tuitionOwed}</TH><TH T={T}/></tr></thead><tbody>{students.map(s=><tr key={s.id}><TD T={T} bold>{s.name}</TD><TD T={T}>{s.email}</TD><TD T={T}>{s.phone||"—"}</TD><TD T={T}>{s.grade}</TD><TD T={T}>{Number(s.tuition_total||0)}</TD><TD T={T}>{Number(s.tuition_paid||0)}</TD><TD T={T}>{Math.max(0,Number(s.tuition_total||0)-Number(s.tuition_paid||0))}</TD><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",gap:6}}><button onClick={()=>openEditStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></td></tr>)}</tbody></table></div>}
+      {isMobile?<div style={{display:"grid",gap:8}}>{students.map(s=><div key={s.id} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:12}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>{s.photo_url?<img src={s.photo_url} alt={s.name} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/>:<div style={{width:26,height:26,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,border:`1px solid ${T.border}`}}><Ic n="user" size={12} color={T.textSub}/></div>}<div style={{fontSize:13,fontWeight:700}}>{s.name}</div></div><div style={{fontSize:12,color:T.textSub}}>{s.email}</div><div style={{fontSize:12,color:T.textSub}}>{s.phone||"—"}</div><div style={{fontSize:12,color:T.textSub}}>{s.grade}</div><div style={{fontSize:12,color:T.textSub}}>{t.tuitionTotal}: {Number(s.tuition_total||0)}</div><div style={{fontSize:12,color:T.textSub}}>{t.tuitionPaid}: {Number(s.tuition_paid||0)}</div><div style={{fontSize:12,color:T.textSub,marginBottom:8}}>{t.tuitionOwed}: {Math.max(0,Number(s.tuition_total||0)-Number(s.tuition_paid||0))}</div><div style={{display:"flex",gap:6}}><button onClick={()=>openEditStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></div>)}</div>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.phone}</TH><TH T={T}>{t.grade}</TH><TH T={T}>{t.tuitionTotal}</TH><TH T={T}>{t.tuitionPaid}</TH><TH T={T}>{t.tuitionOwed}</TH><TH T={T}/></tr></thead><tbody>{students.map(s=><tr key={s.id}><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",alignItems:"center",gap:8}}>{s.photo_url?<img src={s.photo_url} alt={s.name} style={{width:24,height:24,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/>:<div style={{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,border:`1px solid ${T.border}`}}><Ic n="user" size={11} color={T.textSub}/></div>}<span style={{fontSize:13,fontWeight:600,color:T.text}}>{s.name}</span></div></td><TD T={T}>{s.email}</TD><TD T={T}>{s.phone||"—"}</TD><TD T={T}>{s.grade}</TD><TD T={T}>{Number(s.tuition_total||0)}</TD><TD T={T}>{Number(s.tuition_paid||0)}</TD><TD T={T}>{Math.max(0,Number(s.tuition_total||0)-Number(s.tuition_paid||0))}</TD><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",gap:6}}><button onClick={()=>openEditStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></td></tr>)}</tbody></table></div>}
     </Card>
 
     <Card T={T}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:700}}><Ic n="teacher" size={16} color={T.textSub}/>{t.teachers}</div><BtnO T={T} style={{padding:"6px 14px",fontSize:12}} onClick={()=>setModal("teacher")}><Ic n="plus" size={13} color={T.text}/>{t.addTeacher}</BtnO></div>
-      {isMobile?<div style={{display:"grid",gap:8}}>{teachers.map(tt=><div key={tt.id} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:12}}><div style={{fontSize:13,fontWeight:700}}>{tt.name}</div><div style={{fontSize:12,color:T.textSub}}>{tt.email}</div><div style={{fontSize:12,color:T.textSub}}>{tt.phone||"—"}</div><div style={{fontSize:12,color:T.textSub}}>{tt.subjectDisplay||tt.subject}</div><div style={{fontSize:12,color:T.textSub,marginBottom:8}}>{tt.grade||"—"}</div><div style={{display:"flex",gap:6}}><button onClick={()=>openEditTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></div>)}</div>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.phone}</TH><TH T={T}>{t.subject}</TH><TH T={T}>{t.grade}</TH><TH T={T}/></tr></thead><tbody>{teachers.map(tt=><tr key={tt.id}><TD T={T} bold>{tt.name}</TD><TD T={T}>{tt.email}</TD><TD T={T}>{tt.phone||"—"}</TD><TD T={T}>{tt.subjectDisplay||tt.subject}</TD><TD T={T}>{tt.grade||"—"}</TD><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",gap:6}}><button onClick={()=>openEditTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></td></tr>)}</tbody></table></div>}
+      {isMobile?<div style={{display:"grid",gap:8}}>{teachers.map(tt=><div key={tt.id} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:12}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>{tt.photo_url?<img src={tt.photo_url} alt={tt.name} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/>:<div style={{width:26,height:26,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,border:`1px solid ${T.border}`}}><Ic n="user" size={12} color={T.textSub}/></div>}<div style={{fontSize:13,fontWeight:700}}>{tt.name}</div></div><div style={{fontSize:12,color:T.textSub}}>{tt.email}</div><div style={{fontSize:12,color:T.textSub}}>{tt.phone||"—"}</div><div style={{fontSize:12,color:T.textSub}}>{tt.subjectDisplay||tt.subject}</div><div style={{fontSize:12,color:T.textSub,marginBottom:8}}>{tt.grade||"—"}</div><div style={{display:"flex",gap:6}}><button onClick={()=>openEditTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></div>)}</div>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.phone}</TH><TH T={T}>{t.subject}</TH><TH T={T}>{t.grade}</TH><TH T={T}/></tr></thead><tbody>{teachers.map(tt=><tr key={tt.id}><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",alignItems:"center",gap:8}}>{tt.photo_url?<img src={tt.photo_url} alt={tt.name} style={{width:24,height:24,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/>:<div style={{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,border:`1px solid ${T.border}`}}><Ic n="user" size={11} color={T.textSub}/></div>}<span style={{fontSize:13,fontWeight:600,color:T.text}}>{tt.name}</span></div></td><TD T={T}>{tt.email}</TD><TD T={T}>{tt.phone||"—"}</TD><TD T={T}>{tt.subjectDisplay||tt.subject}</TD><TD T={T}>{tt.grade||"—"}</TD><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",gap:6}}><button onClick={()=>openEditTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></td></tr>)}</tbody></table></div>}
     </Card>
 
     <Modal open={modal==="cred"} onClose={()=>setModal(null)} title={t.addCredential} T={T} dir={dir}>
@@ -1297,6 +1463,7 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
         <div><Lbl T={T}>{t.tuitionTotal}</Lbl><Inp T={T} type="number" min="0" value={ns.tuition_total??0} onChange={e=>setNs(p=>({...p,tuition_total:+e.target.value}))}/></div>
         <div><Lbl T={T}>{t.tuitionPaid}</Lbl><Inp T={T} type="number" min="0" value={ns.tuition_paid??0} onChange={e=>setNs(p=>({...p,tuition_paid:+e.target.value}))}/></div>
       </div>
+      <div style={{marginBottom:16}}><Lbl T={T}>Photo</Lbl><Inp T={T} type="file" accept="image/*" onChange={e=>handlePhotoSelect(setNs,e.target.files?.[0])}/>{ns.photo_url&&<div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}><img src={ns.photo_url} alt={ns.name||"student"} style={{width:42,height:42,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/><BtnO T={T} type="button" style={{padding:"4px 10px",fontSize:11}} onClick={()=>setNs(p=>({...p,photo_url:""}))}>Remove</BtnO></div>}</div>
       <div style={{marginBottom:12}}><Checkbox checked={nsCred.enabled} onChange={()=>setNsCred(p=>({...p,enabled:!p.enabled}))} label={t.createApprovedLogin} T={T}/></div>
       {nsCred.enabled&&<div style={{marginBottom:16}}><Lbl T={T}>{t.newPassword}</Lbl><Inp T={T} type="password" value={nsCred.password} onChange={e=>setNsCred(p=>({...p,password:e.target.value}))}/></div>}
       {gradePeriods.length>0&&<div style={{marginBottom:16}}><div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.textMuted,marginBottom:12}}>{t.initialGrades}</div>{gradePeriods.map(period=><div key={period.id} style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:700,color:T.textSub,marginBottom:8,paddingBottom:6,borderBottom:`1px solid ${T.border}`}}>{period.label}</div><div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:8}}>{SKEYS.map((sk,si)=><div key={sk}><Lbl T={T}>{SLABELS[si]}</Lbl><Inp T={T} type="number" min="0" max="100" value={nsG[period.id]?.[sk]??0} onChange={e=>setNsG(prev=>({...prev,[period.id]:{...prev[period.id],[sk]:+e.target.value}}))}/></div>)}</div></div>)}</div>}
@@ -1306,12 +1473,14 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
       {[["name",t.name,"text"],["email",t.emailLbl,"email"],["phone",t.phone,"tel"]].map(([f,lbl,tp])=><div key={f} style={{marginBottom:14}}><Lbl T={T}>{lbl}</Lbl><Inp T={T} type={tp} value={nt[f]} onChange={e=>setNt(p=>({...p,[f]:e.target.value}))}/></div>)}
       <div style={{marginBottom:14}}><Lbl T={T}>{t.subject}</Lbl><Sel T={T} value={nt.subject} onChange={e=>setNt(p=>({...p,subject:e.target.value}))}>{subjects.map((s)=><option key={s.id} value={s.id}>{lang==="ar"?s.label_ar:s.label_en}</option>)}</Sel></div>
       <div style={{marginBottom:18}}><Lbl T={T}>{t.gradeForTeacher}</Lbl><Sel T={T} value={nt.grade} onChange={e=>setNt(p=>({...p,grade:e.target.value}))}>{t.grades1to12.map(g=><option key={g} value={g}>{g}</option>)}</Sel></div>
+      <div style={{marginBottom:16}}><Lbl T={T}>Photo</Lbl><Inp T={T} type="file" accept="image/*" onChange={e=>handlePhotoSelect(setNt,e.target.files?.[0])}/>{nt.photo_url&&<div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}><img src={nt.photo_url} alt={nt.name||"teacher"} style={{width:42,height:42,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/><BtnO T={T} type="button" style={{padding:"4px 10px",fontSize:11}} onClick={()=>setNt(p=>({...p,photo_url:""}))}>Remove</BtnO></div>}</div>
       <div style={{marginBottom:12}}><Checkbox checked={ntCred.enabled} onChange={()=>setNtCred(p=>({...p,enabled:!p.enabled}))} label={t.createApprovedLogin} T={T}/></div>
       {ntCred.enabled&&<div style={{marginBottom:16}}><Lbl T={T}>{t.newPassword}</Lbl><Inp T={T} type="password" value={ntCred.password} onChange={e=>setNtCred(p=>({...p,password:e.target.value}))}/></div>}
       <BtnP T={T} style={{width:"100%"}} onClick={addTeacher}><Ic n="plus" size={14} color={T.accentInv}/>{t.addTeacher}</BtnP>
     </Modal>
     <Modal open={modal==="accountant"} onClose={()=>setModal(null)} title={t.addAccountant} T={T} dir={dir}>
       {[["name",t.name,"text"],["email",t.emailLbl,"email"],["phone",t.phone,"tel"]].map(([f,lbl,tp])=><div key={f} style={{marginBottom:14}}><Lbl T={T}>{lbl}</Lbl><Inp T={T} type={tp} value={na[f]} onChange={e=>setNa(p=>({...p,[f]:e.target.value}))}/></div>)}
+      <div style={{marginBottom:16}}><Lbl T={T}>Photo</Lbl><Inp T={T} type="file" accept="image/*" onChange={e=>handlePhotoSelect(setNa,e.target.files?.[0])}/>{na.photo_url&&<div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}><img src={na.photo_url} alt={na.name||"accountant"} style={{width:42,height:42,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/><BtnO T={T} type="button" style={{padding:"4px 10px",fontSize:11}} onClick={()=>setNa(p=>({...p,photo_url:""}))}>Remove</BtnO></div>}</div>
       <div style={{marginBottom:12}}><Checkbox checked={naCred.enabled} onChange={()=>setNaCred(p=>({...p,enabled:!p.enabled}))} label={t.createApprovedLogin} T={T}/></div>
       {naCred.enabled&&<div style={{marginBottom:16}}><Lbl T={T}>{t.newPassword}</Lbl><Inp T={T} type="password" value={naCred.password} onChange={e=>setNaCred(p=>({...p,password:e.target.value}))}/></div>}
       <BtnP T={T} style={{width:"100%"}} onClick={addAccountant}><Ic n="plus" size={14} color={T.accentInv}/>{t.addAccountant}</BtnP>
@@ -1337,6 +1506,7 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
         <div><Lbl T={T}>{t.tuitionTotal}</Lbl><Inp T={T} type="number" min="0" value={editStudent?.tuition_total??0} onChange={e=>setEditStudent(p=>({...p,tuition_total:+e.target.value}))}/></div>
         <div><Lbl T={T}>{t.tuitionPaid}</Lbl><Inp T={T} type="number" min="0" value={editStudent?.tuition_paid??0} onChange={e=>setEditStudent(p=>({...p,tuition_paid:+e.target.value}))}/></div>
       </div>
+      <div style={{marginBottom:16}}><Lbl T={T}>Photo</Lbl><Inp T={T} type="file" accept="image/*" onChange={e=>handlePhotoSelect(setEditStudent,e.target.files?.[0])}/>{editStudent?.photo_url&&<div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}><img src={editStudent.photo_url} alt={editStudent.name||"student"} style={{width:42,height:42,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/><BtnO T={T} type="button" style={{padding:"4px 10px",fontSize:11}} onClick={()=>setEditStudent(p=>({...p,photo_url:""}))}>Remove</BtnO></div>}</div>
       {editStudentLogin.has?<div style={{marginBottom:14,fontSize:12,color:T.success,background:`${T.success}14`,border:`1px solid ${T.success}44`,borderRadius:8,padding:"10px 12px"}}>{t.approvedLoginLinked}</div>:<>
         <div style={{marginBottom:12}}><Checkbox checked={editStudentLogin.create} onChange={()=>setEditStudentLogin(p=>({...p,create:!p.create}))} label={t.createLoginOnSave} T={T}/></div>
         {editStudentLogin.create&&<div style={{marginBottom:16}}><Lbl T={T}>{t.newPassword}</Lbl><Inp T={T} type="password" value={editStudentLogin.password} onChange={e=>setEditStudentLogin(p=>({...p,password:e.target.value}))}/></div>}
@@ -1349,6 +1519,7 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
       <div style={{marginBottom:14}}><Lbl T={T}>{t.phone}</Lbl><Inp T={T} value={editTeacher?.phone||""} onChange={e=>setEditTeacher(p=>({...p,phone:e.target.value}))}/></div>
       <div style={{marginBottom:14}}><Lbl T={T}>{t.subject}</Lbl><Sel T={T} value={editTeacher?.subject||subjects[0]?.id||"math"} onChange={e=>setEditTeacher(p=>({...p,subject:e.target.value}))}>{subjects.map((s)=><option key={s.id} value={s.id}>{lang==="ar"?s.label_ar:s.label_en}</option>)}</Sel></div>
       <div style={{marginBottom:18}}><Lbl T={T}>{t.gradeForTeacher}</Lbl><Sel T={T} value={editTeacher?.grade||t.grades1to12[0]} onChange={e=>setEditTeacher(p=>({...p,grade:e.target.value}))}>{t.grades1to12.map(g=><option key={g} value={g}>{g}</option>)}</Sel></div>
+      <div style={{marginBottom:16}}><Lbl T={T}>Photo</Lbl><Inp T={T} type="file" accept="image/*" onChange={e=>handlePhotoSelect(setEditTeacher,e.target.files?.[0])}/>{editTeacher?.photo_url&&<div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}><img src={editTeacher.photo_url} alt={editTeacher.name||"teacher"} style={{width:42,height:42,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/><BtnO T={T} type="button" style={{padding:"4px 10px",fontSize:11}} onClick={()=>setEditTeacher(p=>({...p,photo_url:""}))}>Remove</BtnO></div>}</div>
       {editTeacherLogin.has?<div style={{marginBottom:14,fontSize:12,color:T.success,background:`${T.success}14`,border:`1px solid ${T.success}44`,borderRadius:8,padding:"10px 12px"}}>{t.approvedLoginLinked}</div>:<>
         <div style={{marginBottom:12}}><Checkbox checked={editTeacherLogin.create} onChange={()=>setEditTeacherLogin(p=>({...p,create:!p.create}))} label={t.createLoginOnSave} T={T}/></div>
         {editTeacherLogin.create&&<div style={{marginBottom:16}}><Lbl T={T}>{t.newPassword}</Lbl><Inp T={T} type="password" value={editTeacherLogin.password} onChange={e=>setEditTeacherLogin(p=>({...p,password:e.target.value}))}/></div>}
@@ -1359,6 +1530,7 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
       <div style={{marginBottom:14}}><Lbl T={T}>{t.name}</Lbl><Inp T={T} value={editAccountant?.name||""} onChange={e=>setEditAccountant(p=>({...p,name:e.target.value}))}/></div>
       <div style={{marginBottom:14}}><Lbl T={T}>{t.emailLbl}</Lbl><Inp T={T} type="email" value={editAccountant?.email||""} onChange={e=>setEditAccountant(p=>({...p,email:e.target.value}))}/></div>
       <div style={{marginBottom:14}}><Lbl T={T}>{t.phone}</Lbl><Inp T={T} value={editAccountant?.phone||""} onChange={e=>setEditAccountant(p=>({...p,phone:e.target.value}))}/></div>
+      <div style={{marginBottom:16}}><Lbl T={T}>Photo</Lbl><Inp T={T} type="file" accept="image/*" onChange={e=>handlePhotoSelect(setEditAccountant,e.target.files?.[0])}/>{editAccountant?.photo_url&&<div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}><img src={editAccountant.photo_url} alt={editAccountant.name||"accountant"} style={{width:42,height:42,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/><BtnO T={T} type="button" style={{padding:"4px 10px",fontSize:11}} onClick={()=>setEditAccountant(p=>({...p,photo_url:""}))}>Remove</BtnO></div>}</div>
       {editAccountantLogin.has?<div style={{marginBottom:14,fontSize:12,color:T.success,background:`${T.success}14`,border:`1px solid ${T.success}44`,borderRadius:8,padding:"10px 12px"}}>{t.approvedLoginLinked}</div>:<>
         <div style={{marginBottom:12}}><Checkbox checked={editAccountantLogin.create} onChange={()=>setEditAccountantLogin(p=>({...p,create:!p.create}))} label={t.createLoginOnSave} T={T}/></div>
         {editAccountantLogin.create&&<div style={{marginBottom:16}}><Lbl T={T}>{t.newPassword}</Lbl><Inp T={T} type="password" value={editAccountantLogin.password} onChange={e=>setEditAccountantLogin(p=>({...p,password:e.target.value}))}/></div>}
@@ -1486,7 +1658,7 @@ function TeacherDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
   return <PageShell T={T} t={t} themeMode={themeMode} onThemeChange={onThemeChange} lang={lang} onToggleLang={onToggleLang} onBack={onBack} title={t.teacher} icon="teacher" sync={sync}
     rightEl={<BtnO T={T} style={{padding:"7px 14px",fontSize:12}} onClick={onSignOut}><Ic n="signout" size={14} color={T.textSub}/>{t.signOut}</BtnO>}>
     {toast&&<Toast msg={toast} onDone={()=>setToast("")} T={T}/>}
-    <InfoCard T={T} name={user.name} icon="teacher" details={[{icon:"book",label:t.subject,value:tSubjLabel},{icon:"phone",label:t.phone,value:user.metadata?.phone||"—"}]}/>
+    <InfoCard T={T} name={user.name} icon="teacher" photoUrl={user.metadata?.photo_url||""} details={[{icon:"book",label:t.subject,value:tSubjLabel},{icon:"phone",label:t.phone,value:user.metadata?.phone||"—"}]}/>
     <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",borderRadius:9,background:`${T.warn}14`,border:`1px solid ${T.warn}33`,marginBottom:22,fontSize:12,color:T.warn}}>
       <Ic n="alert" size={14} color={T.warn}/>{t.mySubjectOnly}: <strong style={{margin:"0 4px"}}>{tSubjLabel}</strong>
     </div>
@@ -1608,7 +1780,7 @@ function StudentDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
   const[studentLoaded,setStudentLoaded]=useState(false);
   const[selectedSubject,setSelectedSubject]=useState("__all");
   const[attSubject,setAttSubject]=useState("math");
-  const info={name:user.name,grade:user.metadata?.grade||sr.grade||"—",phone:user.metadata?.phone||sr.phone||"—"};
+  const info={name:user.name,grade:user.metadata?.grade||sr.grade||"—",phone:user.metadata?.phone||sr.phone||"—",photo_url:sr.photo_url||user.metadata?.photo_url||""};
   const subjList=subjects.length>0?subjects:t.subjectKeys.map((id,i)=>({id,label_ar:t.subjects[i]||id,label_en:t.subjects[i]||id}));
   const SLABELS=subjList.map(s=>lang==="ar"?s.label_ar:s.label_en);
   const SKEYS=subjList.map(s=>s.id);
@@ -1628,10 +1800,10 @@ function StudentDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
     let alive=true;
     async function loadStudentSelf(){
       const email=String(user.email||"").trim().toLowerCase();
-      const row=(await sb.get("students",`?email=eq.${esc(email)}&select=id,name,email,grade,phone,tuition_total,tuition_paid&limit=1`,user?.accessToken||null))?.[0];
+      const row=(await sb.get("students",`?email=eq.${esc(email)}&select=id,name,email,grade,phone,tuition_total,tuition_paid,photo_url&limit=1`,user?.accessToken||null))?.[0];
       if(!alive)return;
       if(row){
-        setSr({id:row.id,name:row.name,email:row.email,grade:row.grade,phone:row.phone||"",tuition_total:Number(row.tuition_total||0),tuition_paid:Number(row.tuition_paid||0)});
+        setSr({id:row.id,name:row.name,email:row.email,grade:row.grade,phone:row.phone||"",tuition_total:Number(row.tuition_total||0),tuition_paid:Number(row.tuition_paid||0),photo_url:row.photo_url||""});
       }
       setStudentLoaded(true);
     }
@@ -1666,13 +1838,21 @@ function StudentDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
         const mapped={};
         rows.forEach(r=>{mapped[r.year_month]=r.days||{};});
         setMyAtt({[sid]:mapped});
+        const firstObjDay=Object.values(mapped).flatMap(m=>Object.values(m||{})).find(v=>v&&typeof v==="object");
+        const firstKey=firstObjDay?Object.keys(firstObjDay)[0]:null;
+        if(firstKey && SKEYS.includes(firstKey)){
+          setAttSubject(firstKey);
+        }else{
+          setAttSubject(SKEYS[0]||"math");
+        }
       }else{
         setMyAtt({[sid]:STUDENT_ATT[sid]||STUDENT_ATT["s1"]});
+        setAttSubject(SKEYS[0]||"math");
       }
     }
     loadMyAttendance();
     return()=>{alive=false;};
-  },[sid,user?.accessToken]);
+  },[sid,user?.accessToken,SKEYS.join(",")]);
   const myG=myGrades||{};
   const sAvg=sk=>{const v=gradePeriods.map(p=>myG[p.id]?.[sk]??0).filter(v=>v>0);return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length):0;};
   const finals=Object.fromEntries(SKEYS.map(s=>[s,sAvg(s)]));
@@ -1684,7 +1864,7 @@ function StudentDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
   return <PageShell T={T} t={t} themeMode={themeMode} onThemeChange={onThemeChange} lang={lang} onToggleLang={onToggleLang} onBack={onBack} title={t.student} icon="student"
     rightEl={<BtnO T={T} style={{padding:"7px 14px",fontSize:12}} onClick={onSignOut}><Ic n="signout" size={14} color={T.textSub}/>{t.signOut}</BtnO>}>
     <div style={{display:"flex",gap:16,alignItems:"stretch",marginBottom:24,flexWrap:"wrap"}}>
-      <InfoCard T={T} name={info.name} icon="student" details={[{icon:"grades",label:t.grade,value:info.grade},{icon:"phone",label:t.phone,value:info.phone}]}/>
+      <InfoCard T={T} name={info.name} icon="student" photoUrl={info.photo_url} details={[{icon:"grades",label:t.grade,value:info.grade},{icon:"phone",label:t.phone,value:info.phone}]}/>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 24px",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minWidth:110,flexShrink:0}}>
         <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.textMuted,marginBottom:6}}>{t.overallAvg}</div>
         <div style={{fontSize:38,fontWeight:800,color:gc(total),lineHeight:1}}>{total||"—"}</div>
@@ -1746,6 +1926,7 @@ function AccountantDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleL
   const[toast,setToast]=useState("");
   const[savingId,setSavingId]=useState(null);
   const[sync,setSync]=useState(null);
+  const info={name:user.name,phone:user.metadata?.phone||"—",photo_url:user.metadata?.photo_url||""};
   useEffect(()=>{
     let alive=true;
     async function load(){
@@ -1816,6 +1997,7 @@ function AccountantDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleL
   return <PageShell T={T} t={t} themeMode={themeMode} onThemeChange={onThemeChange} lang={lang} onToggleLang={onToggleLang} onBack={onBack} title={t.accountant} icon="stats" sync={sync}
     rightEl={<BtnO T={T} style={{padding:"7px 14px",fontSize:12}} onClick={onSignOut}><Ic n="signout" size={14} color={T.textSub}/>{t.signOut}</BtnO>}>
     {toast&&<Toast msg={toast} onDone={()=>setToast("")} T={T}/>}
+    <InfoCard T={T} name={info.name} icon="stats" photoUrl={info.photo_url} details={[{icon:"phone",label:t.phone,value:info.phone},{icon:"book",label:t.emailLbl,value:user.email||"—"},{icon:"user",label:t.roleLabel,value:t.accountant}]}/>
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,minmax(140px,1fr))",gap:10,marginBottom:16}}>
       <Card T={T} style={{padding:14}}><div style={{fontSize:11,color:T.textMuted,marginBottom:4}}>{t.tuitionTotal}</div><div style={{fontSize:24,fontWeight:800}}>{totals.total}</div></Card>
       <Card T={T} style={{padding:14}}><div style={{fontSize:11,color:T.textMuted,marginBottom:4}}>{t.tuitionPaid}</div><div style={{fontSize:24,fontWeight:800,color:T.success}}>{totals.paid}</div></Card>
@@ -1858,7 +2040,7 @@ function AccountantDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleL
 function BusDriverDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,onSignOut}){
   const T=getTheme(themeMode),t=TR[lang];
   const[tracking,setTracking]=useState(false);
-  const info={name:user.name,bus:user.metadata?.busNumber||"حافلة 45",route:user.metadata?.route||"مسار أ",phone:user.metadata?.phone||"—"};
+  const info={name:user.name,bus:user.metadata?.busNumber||"حافلة 45",route:user.metadata?.route||"مسار أ",phone:user.metadata?.phone||"—",photo_url:user.metadata?.photo_url||""};
 
   return <PageShell T={T} t={t} themeMode={themeMode} onThemeChange={onThemeChange} lang={lang} onToggleLang={onToggleLang} onBack={onBack} title={t.busDriver} icon="bus"
     rightEl={<BtnO T={T} style={{padding:"7px 14px",fontSize:12}} onClick={onSignOut}><Ic n="signout" size={14} color={T.textSub}/>{t.signOut}</BtnO>}>
@@ -1921,7 +2103,7 @@ export default function App(){
     async function loadBootData(){
       const[dSub,dUsers,dPeriods,dGrades]=await Promise.all([
         sb.get("subjects","?order=created_at.asc"),
-        sb.get("app_users","?select=email,name,role,phone,grade,subject,bus_number,route&order=created_at.asc"),
+        sb.get("app_users","?select=email,name,role,phone,grade,subject,bus_number,route,photo_url&order=created_at.asc"),
         sb.get("grade_periods","?order=created_at.asc"),
         sb.get("grades","?select=student_id,period_id,scores"),
       ]);
@@ -1938,9 +2120,10 @@ export default function App(){
             subject:u.subject||null,
             busNumber:u.bus_number||null,
             route:u.route||null,
+            photo_url:u.photo_url||"",
           }
         }]));
-        setCreds(mapped);
+        setCreds(prev=>({...prev,...mapped}));
       }
       if(alive&&dPeriods&&dPeriods.length>0){
         setPeriods(dPeriods.map(p=>({id:p.id,label:p.label})));

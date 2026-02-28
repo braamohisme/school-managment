@@ -57,7 +57,19 @@ export default async function handler(req, res) {
   } else {
     body = req.body || {};
   }
-  const { email, password, name, role, phone, grade, subject, bus_number, route } = body;
+  const {
+    email,
+    password,
+    name,
+    role,
+    phone,
+    grade,
+    grades,
+    subject,
+    subjects,
+    bus_number,
+    route
+  } = body;
   if (!email || !password || !name || !role) {
     return res.status(400).json({ error: "missing_required_fields" });
   }
@@ -110,7 +122,9 @@ export default async function handler(req, res) {
         role,
         phone: phone || null,
         grade: grade || null,
+        grades: Array.isArray(grades) ? grades.filter(Boolean) : (grade ? [grade] : []),
         subject: subject || null,
+        subjects: Array.isArray(subjects) ? subjects.filter(Boolean) : (subject ? [subject] : []),
         bus_number: bus_number || null,
         route: route || null,
       }]),

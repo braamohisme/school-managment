@@ -11,6 +11,25 @@ const IS_DEV = Boolean(META_ENV.DEV);
 const SB_READY = Boolean(SUPABASE_URL && SUPABASE_KEY);
 const H = SB_READY ? { "Content-Type":"application/json", apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}` } : null;
 const esc = v => encodeURIComponent(String(v));
+const normalizeEmail = v => String(v||"").trim().toLowerCase();
+const normalizeList = v => {
+  if(Array.isArray(v))return [...new Set(v.map(x=>String(x||"").trim()).filter(Boolean))];
+  const s=String(v||"").trim();
+  return s?[s]:[];
+};
+const teacherSubjectsOf = t => {
+  const list=normalizeList(t?.subjects);
+  return list.length?list:normalizeList(t?.subject);
+};
+const teacherGradesOf = t => {
+  const list=normalizeList(t?.grades);
+  return list.length?list:normalizeList(t?.grade);
+};
+const firstOrNull = arr => (arr&&arr.length>0?arr[0]:null);
+const gradeNumber = g => {
+  const m=String(g||"").match(/\d+/);
+  return m?Number(m[0]):Number.MAX_SAFE_INTEGER;
+};
 
 const sb = {
   async get(table, qs="", accessToken=null) {
@@ -251,10 +270,13 @@ const TR = {
     loading:"جارٍ التحميل...",syncOk:"متصل بقاعدة البيانات",syncFail:"يعمل دون اتصال",
     noGradePeriods:"لا توجد فترات تقييم — يرجى طلبها من المدير.",
     mySubjectOnly:"تعديل درجات مادتك فقط",
-    grades1to12:Array.from({length:12},(_,i)=>`الصف ${i+1}`),
+    grades1to12:["الصف الأول","الصف الثاني","الصف الثالث","الصف الرابع","الصف الخامس","الصف السادس"],
     roles:{admin:"مدير",teacher:"معلم",student:"طالب",bus_driver:"سائق حافلة",accountant:"محاسب"},
     subjectsSection:"المواد الدراسية",addSubject:"إضافة مادة",subjectName:"اسم المادة",
     subjectAdded:"تمت إضافة المادة.",subjectDeleted:"تم حذف المادة.",gradeForTeacher:"الصف المسؤول",
+    addAnotherSubject:"إضافة مادة أخرى",addAnotherClass:"إضافة صف آخر",
+    sortBy:"ترتيب حسب",filterByGrade:"تصفية الصف",gradeAsc:"الصف تصاعدي",gradeDesc:"الصف تنازلي",nameAsc:"الاسم أ-ي",nameDesc:"الاسم ي-أ",
+    removeItem:"إزالة",
   },
   en:{
     dir:"ltr",appName:"zhoor al iraq private school",signIn:"Sign in to continue",
@@ -306,10 +328,13 @@ const TR = {
     loading:"Loading...",syncOk:"Connected to database",syncFail:"Working offline",
     noGradePeriods:"No grade periods defined. Ask admin to add some.",
     mySubjectOnly:"You can only edit your subject",
-    grades1to12:Array.from({length:12},(_,i)=>`Grade ${i+1}`),
+    grades1to12:["1st Grade","2nd Grade","3rd Grade","4th Grade","5th Grade","6th Grade"],
     roles:{admin:"Admin",teacher:"Teacher",student:"Student",bus_driver:"Bus Driver",accountant:"Accountant"},
     subjectsSection:"Subjects",addSubject:"Add subject",subjectName:"Subject name",
     subjectAdded:"Subject added.",subjectDeleted:"Subject removed.",gradeForTeacher:"Assigned Grade",
+    addAnotherSubject:"Add another subject",addAnotherClass:"Add another class",
+    sortBy:"Sort by",filterByGrade:"Filter grade",gradeAsc:"Grade ascending",gradeDesc:"Grade descending",nameAsc:"Name A-Z",nameDesc:"Name Z-A",
+    removeItem:"Remove",
   }
 };
 
@@ -326,8 +351,8 @@ const SOCIAL_LINKS={
 // ── Static data ───────────────────────────────────────────────────────────────
 const DEFAULT_CREDS = {
   "admin@school.edu":   {name:"مدير النظام",     role:"admin",      metadata:{phone:"+966 50 000 0001"}},
-  "teacher@school.edu": {name:"د. سارة جونسون",  role:"teacher",    metadata:{subject:"math",phone:"+966 50 123 4567"}},
-  "student@school.edu": {name:"أليكس مارتينيز",  role:"student",    metadata:{grade:"الصف 10",phone:"+966 50 987 6543"}},
+  "teacher@school.edu": {name:"د. سارة جونسون",  role:"teacher",    metadata:{subject:"math",subjects:["math","science"],grade:"الصف الخامس",grades:["الصف الرابع","الصف الخامس"],phone:"+966 50 123 4567"}},
+  "student@school.edu": {name:"أليكس مارتينيز",  role:"student",    metadata:{grade:"الصف الخامس",phone:"+966 50 987 6543"}},
   "driver@school.edu":  {name:"جون السائق",      role:"bus_driver", metadata:{busNumber:"حافلة 45",route:"مسار أ - الحي الشرقي",phone:"+966 50 456 7890"}},
 };
 const DEMO_PASSWORDS = {
@@ -338,15 +363,15 @@ const DEMO_PASSWORDS = {
 };
 const SUBJ_KEYS = ["math","science","english","history","art"];
 const DEMO_STUDENTS = [
-  {id:"s1",name:"أليكس مارتينيز",email:"student@school.edu",grade:"الصف 10",phone:"+966 50 987 6543",tuition_total:10000,tuition_paid:7000},
-  {id:"s2",name:"جيمي لي",        email:"jamie@school.edu",  grade:"الصف 10",phone:"+966 50 234 5678",tuition_total:10000,tuition_paid:5500},
-  {id:"s3",name:"سام ريفيرا",     email:"sam@school.edu",    grade:"الصف 11",phone:"+966 50 345 6789",tuition_total:11000,tuition_paid:9000},
-  {id:"s4",name:"بريا باتيل",     email:"priya@school.edu",  grade:"الصف 11",phone:"+966 50 456 7890",tuition_total:11000,tuition_paid:3000},
-  {id:"s5",name:"كريس نجوين",     email:"chris@school.edu",  grade:"الصف 12",phone:"+966 50 567 8901",tuition_total:12000,tuition_paid:12000},
+  {id:"s1",name:"أليكس مارتينيز",email:"student@school.edu",grade:"الصف الخامس",phone:"+966 50 987 6543",tuition_total:10000,tuition_paid:7000},
+  {id:"s2",name:"جيمي لي",        email:"jamie@school.edu",  grade:"الصف الخامس",phone:"+966 50 234 5678",tuition_total:10000,tuition_paid:5500},
+  {id:"s3",name:"سام ريفيرا",     email:"sam@school.edu",    grade:"الصف السادس",phone:"+966 50 345 6789",tuition_total:11000,tuition_paid:9000},
+  {id:"s4",name:"بريا باتيل",     email:"priya@school.edu",  grade:"الصف الرابع",phone:"+966 50 456 7890",tuition_total:11000,tuition_paid:3000},
+  {id:"s5",name:"كريس نجوين",     email:"chris@school.edu",  grade:"الصف الثالث",phone:"+966 50 567 8901",tuition_total:12000,tuition_paid:12000},
 ];
 const DEMO_TEACHERS = [
-  {id:"t1",name:"د. سارة جونسون",email:"teacher@school.edu",subject:"math",   subjectDisplay:"رياضيات",phone:"+966 50 123 4567"},
-  {id:"t2",name:"م. داود بارك",   email:"david@school.edu",  subject:"science",subjectDisplay:"علوم",    phone:"+966 50 678 9012"},
+  {id:"t1",name:"د. سارة جونسون",email:"teacher@school.edu",subject:"math",subjects:["math","science"],subjectDisplay:"رياضيات، علوم",grade:"الصف الخامس",grades:["الصف الرابع","الصف الخامس"],phone:"+966 50 123 4567"},
+  {id:"t2",name:"م. داود بارك",   email:"david@school.edu",  subject:"science",subjects:["science"],subjectDisplay:"علوم",grade:"الصف السادس",grades:["الصف السادس"],phone:"+966 50 678 9012"},
 ];
 const DEMO_ACCOUNTANTS = [
   {id:"a1",name:"ليلى المحاسبة",email:"accountant@school.edu",phone:"+966 50 222 1111"},
@@ -431,9 +456,11 @@ function Divider({T}){return <div style={{height:1,background:T.border,margin:"2
 function SchoolBrand({T,lang="ar",compact=false,animate=false,stacked=false}){
   const isMobile=useIsMobile();
   const primary=lang==="ar"?SCHOOL_NAME_AR:SCHOOL_NAME_EN;
-  const size=compact?(isMobile?40:48):(isMobile?84:120);
-  const titleSize=compact?(isMobile?11:13):(isMobile?16:20);
-  return <div style={{display:"flex",flexDirection:stacked?"column":"row",alignItems:"center",gap:compact?8:12,animation:animate?"brandFloat 4.8s ease-in-out infinite":"brandReveal .42s ease"}}>
+  const mobileCompact=compact&&isMobile;
+  const forceStacked=stacked||mobileCompact;
+  const size=compact?(isMobile?36:48):(isMobile?96:120);
+  const titleSize=compact?(isMobile?10:13):(isMobile?15:20);
+  return <div style={{display:"flex",flexDirection:forceStacked?"column":"row",alignItems:"center",gap:compact?8:12,animation:animate?"brandFloat 4.8s ease-in-out infinite":"brandReveal .42s ease",minWidth:0,maxWidth:isMobile?(compact?132:260):"none"}}>
     <div style={{width:size,height:size,borderRadius:compact?10:16,overflow:"hidden",border:`1px solid ${T.border}`,background:T.surface,boxShadow:compact?"0 6px 16px rgba(0,0,0,.12)":"0 10px 24px rgba(0,0,0,.16)",flexShrink:0}}>
       <img
         src={SCHOOL_LOGO_SRC}
@@ -445,8 +472,8 @@ function SchoolBrand({T,lang="ar",compact=false,animate=false,stacked=false}){
         }}
       />
     </div>
-    <div style={{lineHeight:1.2,textAlign:stacked?"center":"start",minWidth:0}}>
-      <div style={{fontSize:titleSize,fontWeight:800,color:T.text,whiteSpace:isMobile?"normal":"nowrap",wordBreak:"break-word"}}>{primary}</div>
+    <div style={{lineHeight:1.15,textAlign:forceStacked?"center":"start",minWidth:0,maxWidth:isMobile?(compact?128:260):"none"}}>
+      <div style={{fontSize:titleSize,fontWeight:800,color:T.text,whiteSpace:isMobile?"normal":"nowrap",wordBreak:"break-word",overflowWrap:"anywhere"}}>{primary}</div>
     </div>
   </div>;
 }
@@ -612,8 +639,8 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
   const submit=async()=>{
     setErr("");setLoading(true);
     try{
-      const normalizedEmail=String(email||"").trim().toLowerCase();
-      const u=creds[normalizedEmail];
+      const normalizedEmail=normalizeEmail(email);
+      const u=creds[normalizedEmail]||Object.entries(creds).find(([k])=>normalizeEmail(k)===normalizedEmail)?.[1];
       if(SB_READY){
         const signInRes=await sb.signIn(normalizedEmail,pass);
         if(!signInRes?.ok){
@@ -626,7 +653,7 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
         }
         const sess=signInRes.data;
         const fallback=u||{name:normalizedEmail,role:null,metadata:{}};
-        let fromDb=(await sb.get("app_users",`?email=eq.${esc(normalizedEmail)}&select=name,role,phone,grade,subject,bus_number,route,photo_url&limit=1`,sess.access_token||null))?.[0];
+        let fromDb=(await sb.get("app_users",`?email=ilike.${esc(normalizedEmail)}&select=name,role,phone,grade,grades,subject,subjects,bus_number,route,photo_url&limit=1`,sess.access_token||null))?.[0];
         if(!fromDb&&u){
           // Self-heal: if Auth exists but app_users row is missing, create it from local approved-login cache.
           await sb.upsert("app_users",[{
@@ -635,18 +662,20 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
             role:u.role||"student",
             phone:u.metadata?.phone||null,
             grade:u.metadata?.grade||null,
+            grades:normalizeList(u.metadata?.grades||u.metadata?.grade),
             subject:u.metadata?.subject||null,
+            subjects:normalizeList(u.metadata?.subjects||u.metadata?.subject),
             bus_number:u.metadata?.busNumber||null,
             route:u.metadata?.route||null,
             photo_url:u.metadata?.photo_url||null,
           }],sess.access_token||null);
-          fromDb=(await sb.get("app_users",`?email=eq.${esc(normalizedEmail)}&select=name,role,phone,grade,subject,bus_number,route,photo_url&limit=1`,sess.access_token||null))?.[0];
+          fromDb=(await sb.get("app_users",`?email=ilike.${esc(normalizedEmail)}&select=name,role,phone,grade,grades,subject,subjects,bus_number,route,photo_url&limit=1`,sess.access_token||null))?.[0];
         }
         if(!fromDb){
           // Fallback self-heal: infer role from profile tables when approved-login cache is missing.
           const [accRow,teachRow,studRow]=await Promise.all([
             sb.get("accountants",`?email=eq.${esc(normalizedEmail)}&select=name,email,phone,photo_url&limit=1`,sess.access_token||null),
-            sb.get("teachers",`?email=eq.${esc(normalizedEmail)}&select=name,email,phone,subject,grade,photo_url&limit=1`,sess.access_token||null),
+            sb.get("teachers",`?email=eq.${esc(normalizedEmail)}&select=name,email,phone,subject,subjects,grade,grades,photo_url&limit=1`,sess.access_token||null),
             sb.get("students",`?email=eq.${esc(normalizedEmail)}&select=name,email,phone,grade,photo_url&limit=1`,sess.access_token||null),
           ]);
           const a=accRow?.[0]||null;
@@ -663,8 +692,10 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
             role:"teacher",
             name:tRow.name||normalizedEmail,
             phone:tRow.phone||null,
-            grade:tRow.grade||null,
-            subject:tRow.subject||null,
+            grade:firstOrNull(teacherGradesOf(tRow))||null,
+            grades:teacherGradesOf(tRow),
+            subject:firstOrNull(teacherSubjectsOf(tRow))||null,
+            subjects:teacherSubjectsOf(tRow),
             photo_url:tRow.photo_url||null,
           }:sRow?{
             role:"student",
@@ -681,10 +712,12 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
               role:inferred.role,
               phone:inferred.phone,
               grade:inferred.grade,
+              grades:normalizeList(inferred.grades||inferred.grade),
               subject:inferred.subject,
+              subjects:normalizeList(inferred.subjects||inferred.subject),
               photo_url:inferred.photo_url,
             }],sess.access_token||null);
-            fromDb=(await sb.get("app_users",`?email=eq.${esc(normalizedEmail)}&select=name,role,phone,grade,subject,bus_number,route,photo_url&limit=1`,sess.access_token||null))?.[0];
+            fromDb=(await sb.get("app_users",`?email=ilike.${esc(normalizedEmail)}&select=name,role,phone,grade,grades,subject,subjects,bus_number,route,photo_url&limit=1`,sess.access_token||null))?.[0];
           }
         }
         const dbUser=fromDb?{
@@ -694,7 +727,9 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
             ...fallback.metadata,
             phone:fromDb.phone??fallback.metadata?.phone,
             grade:fromDb.grade??fallback.metadata?.grade,
+            grades:normalizeList(fromDb.grades??fallback.metadata?.grades??fromDb.grade??fallback.metadata?.grade),
             subject:fromDb.subject??fallback.metadata?.subject,
+            subjects:normalizeList(fromDb.subjects??fallback.metadata?.subjects??fromDb.subject??fallback.metadata?.subject),
             busNumber:fromDb.bus_number??fallback.metadata?.busNumber,
             route:fromDb.route??fallback.metadata?.route,
             photo_url:fromDb.photo_url??fallback.metadata?.photo_url,
@@ -763,12 +798,12 @@ function Home({user,onNavigate,onSignOut,themeMode,onThemeChange,lang,onToggleLa
   return <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",direction:t.dir}}>
     <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes fadeInUp{0%{opacity:0;transform:translateY(5px)}100%{opacity:1;transform:translateY(0)}}@keyframes popIn{0%{opacity:0;transform:scale(.985)}100%{opacity:1;transform:scale(1)}}@keyframes fadeOverlay{0%{opacity:0}100%{opacity:1}} *{box-sizing:border-box}`}</style>
     <div style={{padding:isMobile?"12px 14px":"18px 28px",borderBottom:`1px solid ${T.border}`,background:T.card}}>
-      <div style={{maxWidth:isMobile?900:"min(1780px, calc(100vw - 56px))",margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
+      <div style={{maxWidth:isMobile?900:"min(1780px, calc(100vw - 56px))",margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:isMobile?"flex-start":"center",gap:10,flexWrap:isMobile?"wrap":"nowrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
           <SchoolBrand T={T} lang={lang} compact={true}/>
-          <div style={{fontSize:11,color:T.textSub}}>{t.welcome} {user.name}</div>
+          {!isMobile&&<div style={{fontSize:11,color:T.textSub}}>{t.welcome} {user.name}</div>}
         </div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:isMobile?"wrap":"nowrap"}}>
           <LangToggle lang={lang} onToggle={onToggleLang} T={T}/>
           <ThemeTabs themeMode={themeMode} onChange={onThemeChange} T={T} t={t}/>
           <BtnO T={T} style={{padding:"7px 14px",fontSize:12}} onClick={onSignOut}><Ic n="signout" size={14} color={T.textSub}/>{t.signOut}</BtnO>
@@ -806,7 +841,7 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
   const[ns,setNs]=useState({name:"",email:"",phone:"",grade:t.grades1to12[0],tuition_total:0,tuition_paid:0,photo_url:""});
   const[nsG,setNsG]=useState(()=>blankP());
   const[nsCred,setNsCred]=useState({enabled:true,password:""});
-  const[nt,setNt]=useState({name:"",email:"",phone:"",subject:subjects[0]?.id||"math",grade:t.grades1to12[0],photo_url:""});
+  const[nt,setNt]=useState({name:"",email:"",phone:"",subjects:[subjects[0]?.id||"math"],grades:[t.grades1to12[0]],photo_url:""});
   const[ntCred,setNtCred]=useState({enabled:true,password:""});
   const[na,setNa]=useState({name:"",email:"",phone:"",photo_url:""});
   const[naCred,setNaCred]=useState({enabled:true,password:""});
@@ -820,6 +855,8 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
   const[editStudentLogin,setEditStudentLogin]=useState({has:false,create:false,password:""});
   const[editTeacherLogin,setEditTeacherLogin]=useState({has:false,create:false,password:""});
   const[editAccountantLogin,setEditAccountantLogin]=useState({has:false,create:false,password:""});
+  const[studentGradeFilter,setStudentGradeFilter]=useState("all");
+  const[studentSort,setStudentSort]=useState("grade_asc");
 
   useEffect(()=>{
     async function load(){
@@ -828,12 +865,28 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
         sb.get("teachers","?order=created_at.asc",user?.accessToken||null),
         sb.get("accountants","?order=created_at.asc",user?.accessToken||null),
         sb.get("subjects","?order=created_at.asc",user?.accessToken||null),
-        sb.get("app_users","?select=email,name,role,phone,grade,subject,bus_number,route,photo_url&order=created_at.asc",user?.accessToken||null),
+        sb.get("app_users","?select=email,name,role,phone,grade,grades,subject,subjects,bus_number,route,photo_url&order=created_at.asc",user?.accessToken||null),
         sb.get("grade_periods","?order=created_at.asc",user?.accessToken||null),
       ]);
       if(dS&&dS.length>0){setStudents(dS.map(s=>({id:s.id,name:s.name,email:s.email,grade:s.grade,phone:s.phone||"",tuition_total:Number(s.tuition_total||0),tuition_paid:Number(s.tuition_paid||0),photo_url:s.photo_url||""})));setSync("ok");}
       else if(dS===null){setSync("fail");}
-      if(dT&&dT.length>0){setTeachers(dT.map(t=>({id:t.id,name:t.name,email:t.email,subject:t.subject,subjectDisplay:t.subject_display||t.subject,grade:t.grade||"",phone:t.phone||"",photo_url:t.photo_url||""})));}
+      if(dT&&dT.length>0){setTeachers(dT.map(tt=>{
+        const tSubjects=teacherSubjectsOf(tt);
+        const tGrades=teacherGradesOf(tt);
+        const subjLabel=tSubjects.map(sk=>SLABELS[SKEYS.indexOf(sk)]||sk).join(", ");
+        return {
+          id:tt.id,
+          name:tt.name,
+          email:tt.email,
+          subject:firstOrNull(tSubjects)||"",
+          subjects:tSubjects,
+          subjectDisplay:subjLabel||tt.subject_display||tt.subject||"",
+          grade:firstOrNull(tGrades)||"",
+          grades:tGrades,
+          phone:tt.phone||"",
+          photo_url:tt.photo_url||"",
+        };
+      }));}
       if(dA&&dA.length>0){setAccountants(dA.map(a=>({id:a.id,name:a.name,email:a.email,phone:a.phone||"",photo_url:a.photo_url||""})));}
       if(dSub&&dSub.length>0){onSubjectsChange(dSub.map(s=>({id:s.id,label_ar:s.label_ar,label_en:s.label_en})));}
       if(dUsers&&dUsers.length>0){
@@ -843,7 +896,9 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
           metadata:{
             phone:u.phone||"",
             grade:u.grade||null,
+            grades:normalizeList(u.grades||u.grade),
             subject:u.subject||null,
+            subjects:normalizeList(u.subjects||u.subject),
             busNumber:u.bus_number||null,
             route:u.route||null,
             photo_url:u.photo_url||"",
@@ -871,6 +926,31 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
         setToast("!Could not read image file.");
       }
     }
+  };
+  const studentGradeOptions=Array.from(new Set(students.map(s=>s.grade).filter(Boolean))).sort((a,b)=>{
+    const ra=gradeNumber(a),rb=gradeNumber(b);
+    if(ra!==rb)return ra-rb;
+    return String(a).localeCompare(String(b),lang==="ar"?"ar":"en");
+  });
+  const shownStudents=students
+    .filter(s=>studentGradeFilter==="all"||s.grade===studentGradeFilter)
+    .sort((a,b)=>{
+      if(studentSort==="name_asc")return String(a.name||"").localeCompare(String(b.name||""),lang==="ar"?"ar":"en");
+      if(studentSort==="name_desc")return String(b.name||"").localeCompare(String(a.name||""),lang==="ar"?"ar":"en");
+      const ga=gradeNumber(a.grade),gb=gradeNumber(b.grade);
+      if(ga!==gb)return studentSort==="grade_desc"?gb-ga:ga-gb;
+      return String(a.name||"").localeCompare(String(b.name||""),lang==="ar"?"ar":"en");
+    });
+  const teacherSubjectsLabel=tList=>normalizeList(tList).map(sk=>SLABELS[SKEYS.indexOf(sk)]||sk).join(", ");
+  const addTeacherSubjectField=(isEdit=false)=>{
+    const first=subjects[0]?.id||"math";
+    if(isEdit)setEditTeacher(p=>({...p,subjects:[...normalizeList(p?.subjects),first]}));
+    else setNt(p=>({...p,subjects:[...normalizeList(p.subjects),first]}));
+  };
+  const addTeacherGradeField=(isEdit=false)=>{
+    const first=t.grades1to12[0];
+    if(isEdit)setEditTeacher(p=>({...p,grades:[...normalizeList(p?.grades),first]}));
+    else setNt(p=>({...p,grades:[...normalizeList(p.grades),first]}));
   };
 
   const addStudent=async()=>{
@@ -902,19 +982,23 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
     setSync(ok?"ok":"fail");
   };
   const addTeacher=async()=>{
-    if(!nt.name||!nt.email||!nt.subject)return;
+    const ntSubjects=normalizeList(nt.subjects);
+    const ntGrades=normalizeList(nt.grades);
+    if(!nt.name||!nt.email||ntSubjects.length===0||ntGrades.length===0)return;
     const email=String(nt.email).trim().toLowerCase();
+    const mainSubject=ntSubjects[0];
+    const mainGrade=ntGrades[0];
     if(ntCred.enabled){
-      const okAuth=await createAuthForApprovedLogin({email,password:ntCred.password,name:nt.name,role:"teacher",phone:nt.phone||"",grade:nt.grade||null,subject:nt.subject||null});
+      const okAuth=await createAuthForApprovedLogin({email,password:ntCred.password,name:nt.name,role:"teacher",phone:nt.phone||"",grade:mainGrade||null,grades:ntGrades,subject:mainSubject||null,subjects:ntSubjects});
       if(!okAuth)return;
-      onCredsChange(prev=>({...prev,[email]:{name:nt.name,role:"teacher",metadata:{phone:nt.phone||"",subject:nt.subject||null,photo_url:nt.photo_url||""}}}));
+      onCredsChange(prev=>({...prev,[email]:{name:nt.name,role:"teacher",metadata:{phone:nt.phone||"",subject:mainSubject||null,subjects:ntSubjects,grade:mainGrade||null,grades:ntGrades,photo_url:nt.photo_url||""}}}));
     }
-    const sl=SLABELS[SKEYS.indexOf(nt.subject)]||nt.subject;
+    const sl=teacherSubjectsLabel(ntSubjects);
     const id=`t${Date.now()}`;
-    const newT={...nt,email,id,subjectDisplay:sl};
+    const newT={...nt,email,id,subject:mainSubject,subjects:ntSubjects,grade:mainGrade,grades:ntGrades,subjectDisplay:sl};
     setTeachers(p=>[...p,newT]);
-    setNt({name:"",email:"",phone:"",subject:subjects[0]?.id||"math",grade:t.grades1to12[0],photo_url:""});setNtCred({enabled:true,password:""});setModal(null);setToast(t.teacherAdded);
-    const ok=await sb.upsert("teachers",[{id,name:newT.name,email:newT.email,subject:newT.subject,subject_display:sl,grade:newT.grade,phone:newT.phone||null,photo_url:newT.photo_url||null}],user?.accessToken||null);
+    setNt({name:"",email:"",phone:"",subjects:[subjects[0]?.id||"math"],grades:[t.grades1to12[0]],photo_url:""});setNtCred({enabled:true,password:""});setModal(null);setToast(t.teacherAdded);
+    const ok=await sb.upsert("teachers",[{id,name:newT.name,email:newT.email,subject:newT.subject,subjects:newT.subjects,subject_display:sl,grade:newT.grade,grades:newT.grades,phone:newT.phone||null,photo_url:newT.photo_url||null}],user?.accessToken||null);
     if(ntCred.enabled||creds[newT.email]){
       await sb.upsert("app_users",[{
         email:newT.email,
@@ -922,7 +1006,9 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
         role:"teacher",
         phone:newT.phone||null,
         grade:newT.grade||null,
+        grades:newT.grades,
         subject:newT.subject||null,
+        subjects:newT.subjects,
         photo_url:newT.photo_url||null,
       }],user?.accessToken||null);
     }
@@ -943,7 +1029,7 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
     const ok=await sb.del("subjects",{id},user?.accessToken||null);
     setSync(ok?"ok":"fail");
   };
-  const createAuthForApprovedLogin=async({email,password,name,role,phone,grade=null,subject=null,busNumber=null,route=null})=>{
+  const createAuthForApprovedLogin=async({email,password,name,role,phone,grade=null,grades=[],subject=null,subjects=[],busNumber=null,route=null})=>{
     const emailNorm=String(email||"").trim().toLowerCase();
     if(!emailNorm){
       setToast(`!${t.invalidCreds}`);
@@ -965,7 +1051,9 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
         email:emailNorm,password,name,role,
         phone:phone||null,
         grade:grade||null,
+        grades:normalizeList(grades||grade),
         subject:subject||null,
+        subjects:normalizeList(subjects||subject),
         bus_number:busNumber||null,
         route:route||null
       },user.accessToken);
@@ -1297,14 +1385,22 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
     setEditStudentLogin({has:false,create:false,password:""});
   };
   const openEditTeacher=tt=>{
-    setEditTeacher({...tt});
+    setEditTeacher({
+      ...tt,
+      subjects:teacherSubjectsOf(tt),
+      grades:teacherGradesOf(tt),
+    });
     const has=Boolean(creds[tt.email]);
     setEditTeacherLogin({has,create:false,password:""});
     setModal("edit-teacher");
   };
   const saveEditTeacher=async()=>{
-    if(!editTeacher?.id||!editTeacher?.name||!editTeacher?.email||!editTeacher?.subject)return;
+    const editSubjects=normalizeList(editTeacher?.subjects);
+    const editGrades=normalizeList(editTeacher?.grades);
+    if(!editTeacher?.id||!editTeacher?.name||!editTeacher?.email||editSubjects.length===0||editGrades.length===0)return;
     const email=String(editTeacher.email).trim().toLowerCase();
+    const mainSubject=editSubjects[0];
+    const mainGrade=editGrades[0];
     const old=teachers.find(tt=>tt.id===editTeacher.id);
     if(!old)return;
     if(old.email!==email && creds[old.email]){
@@ -1318,17 +1414,22 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
         name:editTeacher.name,
         role:"teacher",
         phone:editTeacher.phone||"",
-        grade:editTeacher.grade||null,
-        subject:editTeacher.subject||null,
+        grade:mainGrade||null,
+        grades:editGrades,
+        subject:mainSubject||null,
+        subjects:editSubjects,
       });
       if(!okAuth)return;
-      onCredsChange(prev=>({...prev,[email]:{name:editTeacher.name,role:"teacher",metadata:{phone:editTeacher.phone||"",subject:editTeacher.subject||null,photo_url:editTeacher.photo_url||""}}}));
+      onCredsChange(prev=>({...prev,[email]:{name:editTeacher.name,role:"teacher",metadata:{phone:editTeacher.phone||"",subject:mainSubject||null,subjects:editSubjects,grade:mainGrade||null,grades:editGrades,photo_url:editTeacher.photo_url||""}}}));
       const okUser=await sb.upsert("app_users",[{
         email,
         name:editTeacher.name,
         role:"teacher",
         phone:editTeacher.phone||null,
-        subject:editTeacher.subject||null,
+        grade:mainGrade||null,
+        grades:editGrades,
+        subject:mainSubject||null,
+        subjects:editSubjects,
         photo_url:editTeacher.photo_url||null,
       }],user?.accessToken||null);
       setSync(okUser?"ok":"fail");
@@ -1339,7 +1440,7 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
           ...(prev[email]||{}),
           name:editTeacher.name,
           role:"teacher",
-          metadata:{...((prev[email]?.metadata)||{}),phone:editTeacher.phone||"",subject:editTeacher.subject||null,photo_url:editTeacher.photo_url||""},
+          metadata:{...((prev[email]?.metadata)||{}),phone:editTeacher.phone||"",subject:mainSubject||null,subjects:editSubjects,grade:mainGrade||null,grades:editGrades,photo_url:editTeacher.photo_url||""},
         }
       }));
       const okUser=await sb.upsert("app_users",[{
@@ -1347,20 +1448,25 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
         name:editTeacher.name,
         role:"teacher",
         phone:editTeacher.phone||null,
-        subject:editTeacher.subject||null,
+        grade:mainGrade||null,
+        grades:editGrades,
+        subject:mainSubject||null,
+        subjects:editSubjects,
         photo_url:editTeacher.photo_url||null,
       }],user?.accessToken||null);
       setSync(okUser?"ok":"fail");
     }
-    const sl=SLABELS[SKEYS.indexOf(editTeacher.subject)]||editTeacher.subject;
-    setTeachers(p=>p.map(tt=>tt.id===editTeacher.id?{...tt,...editTeacher,email,subjectDisplay:sl}:tt));
+    const sl=teacherSubjectsLabel(editSubjects);
+    setTeachers(p=>p.map(tt=>tt.id===editTeacher.id?{...tt,...editTeacher,email,subject:mainSubject,subjects:editSubjects,grade:mainGrade,grades:editGrades,subjectDisplay:sl}:tt));
     const ok=await sb.upsert("teachers",[{
       id:editTeacher.id,
       name:editTeacher.name,
       email,
-      subject:editTeacher.subject,
+      subject:mainSubject,
+      subjects:editSubjects,
       subject_display:sl,
-      grade:editTeacher.grade||null,
+      grade:mainGrade||null,
+      grades:editGrades,
       phone:editTeacher.phone||null,
       photo_url:editTeacher.photo_url||null,
     }],user?.accessToken||null);
@@ -1437,13 +1543,17 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
     </Card>
 
     <Card T={T} style={{marginBottom:16}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:700}}><Ic n="users" size={16} color={T.textSub}/>{t.students}</div><BtnO T={T} style={{padding:"6px 14px",fontSize:12}} onClick={()=>setModal("student")}><Ic n="plus" size={13} color={T.text}/>{t.addStudent}</BtnO></div>
-      {isMobile?<div style={{display:"grid",gap:8}}>{students.map(s=><div key={s.id} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:12}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>{s.photo_url?<img src={s.photo_url} alt={s.name} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/>:<div style={{width:26,height:26,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,border:`1px solid ${T.border}`}}><Ic n="user" size={12} color={T.textSub}/></div>}<div style={{fontSize:13,fontWeight:700}}>{s.name}</div></div><div style={{fontSize:12,color:T.textSub}}>{s.email}</div><div style={{fontSize:12,color:T.textSub}}>{s.phone||"—"}</div><div style={{fontSize:12,color:T.textSub}}>{s.grade}</div><div style={{fontSize:12,color:T.textSub}}>{t.tuitionTotal}: {Number(s.tuition_total||0)}</div><div style={{fontSize:12,color:T.textSub}}>{t.tuitionPaid}: {Number(s.tuition_paid||0)}</div><div style={{fontSize:12,color:T.textSub,marginBottom:8}}>{t.tuitionOwed}: {Math.max(0,Number(s.tuition_total||0)-Number(s.tuition_paid||0))}</div><div style={{display:"flex",gap:6}}><button onClick={()=>openEditStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></div>)}</div>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.phone}</TH><TH T={T}>{t.grade}</TH><TH T={T}>{t.tuitionTotal}</TH><TH T={T}>{t.tuitionPaid}</TH><TH T={T}>{t.tuitionOwed}</TH><TH T={T}/></tr></thead><tbody>{students.map(s=><tr key={s.id}><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",alignItems:"center",gap:8}}>{s.photo_url?<img src={s.photo_url} alt={s.name} style={{width:24,height:24,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/>:<div style={{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,border:`1px solid ${T.border}`}}><Ic n="user" size={11} color={T.textSub}/></div>}<span style={{fontSize:13,fontWeight:600,color:T.text}}>{s.name}</span></div></td><TD T={T}>{s.email}</TD><TD T={T}>{s.phone||"—"}</TD><TD T={T}>{s.grade}</TD><TD T={T}>{Number(s.tuition_total||0)}</TD><TD T={T}>{Number(s.tuition_paid||0)}</TD><TD T={T}>{Math.max(0,Number(s.tuition_total||0)-Number(s.tuition_paid||0))}</TD><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",gap:6}}><button onClick={()=>openEditStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></td></tr>)}</tbody></table></div>}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:10}}><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:700}}><Ic n="users" size={16} color={T.textSub}/>{t.students}</div><BtnO T={T} style={{padding:"6px 14px",fontSize:12}} onClick={()=>setModal("student")}><Ic n="plus" size={13} color={T.text}/>{t.addStudent}</BtnO></div>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:8,marginBottom:12}}>
+        <div><Lbl T={T}>{t.filterByGrade}</Lbl><Sel T={T} value={studentGradeFilter} onChange={e=>setStudentGradeFilter(e.target.value)}><option value="all">{t.allGrades}</option>{studentGradeOptions.map(g=><option key={g} value={g}>{g}</option>)}</Sel></div>
+        <div><Lbl T={T}>{t.sortBy}</Lbl><Sel T={T} value={studentSort} onChange={e=>setStudentSort(e.target.value)}>{[["grade_asc",t.gradeAsc],["grade_desc",t.gradeDesc],["name_asc",t.nameAsc],["name_desc",t.nameDesc]].map(([v,l])=><option key={v} value={v}>{l}</option>)}</Sel></div>
+      </div>
+      {isMobile?<div style={{display:"grid",gap:8}}>{shownStudents.map(s=><div key={s.id} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:12}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>{s.photo_url?<img src={s.photo_url} alt={s.name} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/>:<div style={{width:26,height:26,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,border:`1px solid ${T.border}`}}><Ic n="user" size={12} color={T.textSub}/></div>}<div style={{fontSize:13,fontWeight:700}}>{s.name}</div></div><div style={{fontSize:12,color:T.textSub}}>{s.email}</div><div style={{fontSize:12,color:T.textSub}}>{s.phone||"—"}</div><div style={{fontSize:12,color:T.textSub}}>{s.grade}</div><div style={{fontSize:12,color:T.textSub}}>{t.tuitionTotal}: {Number(s.tuition_total||0)}</div><div style={{fontSize:12,color:T.textSub}}>{t.tuitionPaid}: {Number(s.tuition_paid||0)}</div><div style={{fontSize:12,color:T.textSub,marginBottom:8}}>{t.tuitionOwed}: {Math.max(0,Number(s.tuition_total||0)-Number(s.tuition_paid||0))}</div><div style={{display:"flex",gap:6}}><button onClick={()=>openEditStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></div>)}</div>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.phone}</TH><TH T={T}>{t.grade}</TH><TH T={T}>{t.tuitionTotal}</TH><TH T={T}>{t.tuitionPaid}</TH><TH T={T}>{t.tuitionOwed}</TH><TH T={T}/></tr></thead><tbody>{shownStudents.map(s=><tr key={s.id}><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",alignItems:"center",gap:8}}>{s.photo_url?<img src={s.photo_url} alt={s.name} style={{width:24,height:24,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/>:<div style={{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,border:`1px solid ${T.border}`}}><Ic n="user" size={11} color={T.textSub}/></div>}<span style={{fontSize:13,fontWeight:600,color:T.text}}>{s.name}</span></div></td><TD T={T}>{s.email}</TD><TD T={T}>{s.phone||"—"}</TD><TD T={T}>{s.grade}</TD><TD T={T}>{Number(s.tuition_total||0)}</TD><TD T={T}>{Number(s.tuition_paid||0)}</TD><TD T={T}>{Math.max(0,Number(s.tuition_total||0)-Number(s.tuition_paid||0))}</TD><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",gap:6}}><button onClick={()=>openEditStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delStudent(s)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></td></tr>)}</tbody></table></div>}
     </Card>
 
     <Card T={T}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><div style={{display:"flex",alignItems:"center",gap:8,fontWeight:700}}><Ic n="teacher" size={16} color={T.textSub}/>{t.teachers}</div><BtnO T={T} style={{padding:"6px 14px",fontSize:12}} onClick={()=>setModal("teacher")}><Ic n="plus" size={13} color={T.text}/>{t.addTeacher}</BtnO></div>
-      {isMobile?<div style={{display:"grid",gap:8}}>{teachers.map(tt=><div key={tt.id} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:12}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>{tt.photo_url?<img src={tt.photo_url} alt={tt.name} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/>:<div style={{width:26,height:26,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,border:`1px solid ${T.border}`}}><Ic n="user" size={12} color={T.textSub}/></div>}<div style={{fontSize:13,fontWeight:700}}>{tt.name}</div></div><div style={{fontSize:12,color:T.textSub}}>{tt.email}</div><div style={{fontSize:12,color:T.textSub}}>{tt.phone||"—"}</div><div style={{fontSize:12,color:T.textSub}}>{tt.subjectDisplay||tt.subject}</div><div style={{fontSize:12,color:T.textSub,marginBottom:8}}>{tt.grade||"—"}</div><div style={{display:"flex",gap:6}}><button onClick={()=>openEditTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></div>)}</div>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.phone}</TH><TH T={T}>{t.subject}</TH><TH T={T}>{t.grade}</TH><TH T={T}/></tr></thead><tbody>{teachers.map(tt=><tr key={tt.id}><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",alignItems:"center",gap:8}}>{tt.photo_url?<img src={tt.photo_url} alt={tt.name} style={{width:24,height:24,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/>:<div style={{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,border:`1px solid ${T.border}`}}><Ic n="user" size={11} color={T.textSub}/></div>}<span style={{fontSize:13,fontWeight:600,color:T.text}}>{tt.name}</span></div></td><TD T={T}>{tt.email}</TD><TD T={T}>{tt.phone||"—"}</TD><TD T={T}>{tt.subjectDisplay||tt.subject}</TD><TD T={T}>{tt.grade||"—"}</TD><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",gap:6}}><button onClick={()=>openEditTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></td></tr>)}</tbody></table></div>}
+      {isMobile?<div style={{display:"grid",gap:8}}>{teachers.map(tt=><div key={tt.id} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:12}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>{tt.photo_url?<img src={tt.photo_url} alt={tt.name} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/>:<div style={{width:26,height:26,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,border:`1px solid ${T.border}`}}><Ic n="user" size={12} color={T.textSub}/></div>}<div style={{fontSize:13,fontWeight:700}}>{tt.name}</div></div><div style={{fontSize:12,color:T.textSub}}>{tt.email}</div><div style={{fontSize:12,color:T.textSub}}>{tt.phone||"—"}</div><div style={{fontSize:12,color:T.textSub}}>{tt.subjectDisplay||tt.subject}</div><div style={{fontSize:12,color:T.textSub,marginBottom:8}}>{normalizeList(tt.grades||tt.grade).join(", ")||"—"}</div><div style={{display:"flex",gap:6}}><button onClick={()=>openEditTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></div>)}</div>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><TH T={T}>{t.name}</TH><TH T={T}>{t.emailLbl}</TH><TH T={T}>{t.phone}</TH><TH T={T}>{t.subject}</TH><TH T={T}>{t.grade}</TH><TH T={T}/></tr></thead><tbody>{teachers.map(tt=><tr key={tt.id}><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",alignItems:"center",gap:8}}>{tt.photo_url?<img src={tt.photo_url} alt={tt.name} style={{width:24,height:24,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/>:<div style={{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,border:`1px solid ${T.border}`}}><Ic n="user" size={11} color={T.textSub}/></div>}<span style={{fontSize:13,fontWeight:600,color:T.text}}>{tt.name}</span></div></td><TD T={T}>{tt.email}</TD><TD T={T}>{tt.phone||"—"}</TD><TD T={T}>{tt.subjectDisplay||tt.subject}</TD><TD T={T}>{normalizeList(tt.grades||tt.grade).join(", ")||"—"}</TD><td style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`}}><div style={{display:"flex",gap:6}}><button onClick={()=>openEditTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textSub,background:"transparent",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="edit" size={11} color={T.textSub}/>{t.editInfo}</button><button onClick={()=>delTeacher(tt)} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.danger,background:"transparent",border:`1px solid ${T.danger}33`,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}><Ic n="trash" size={11} color={T.danger}/>{t.deleteBtn}</button></div></td></tr>)}</tbody></table></div>}
     </Card>
 
     <Modal open={modal==="cred"} onClose={()=>setModal(null)} title={t.addCredential} T={T} dir={dir}>
@@ -1471,8 +1581,8 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
     </Modal>
     <Modal open={modal==="teacher"} onClose={()=>setModal(null)} title={t.addTeacher} T={T} dir={dir}>
       {[["name",t.name,"text"],["email",t.emailLbl,"email"],["phone",t.phone,"tel"]].map(([f,lbl,tp])=><div key={f} style={{marginBottom:14}}><Lbl T={T}>{lbl}</Lbl><Inp T={T} type={tp} value={nt[f]} onChange={e=>setNt(p=>({...p,[f]:e.target.value}))}/></div>)}
-      <div style={{marginBottom:14}}><Lbl T={T}>{t.subject}</Lbl><Sel T={T} value={nt.subject} onChange={e=>setNt(p=>({...p,subject:e.target.value}))}>{subjects.map((s)=><option key={s.id} value={s.id}>{lang==="ar"?s.label_ar:s.label_en}</option>)}</Sel></div>
-      <div style={{marginBottom:18}}><Lbl T={T}>{t.gradeForTeacher}</Lbl><Sel T={T} value={nt.grade} onChange={e=>setNt(p=>({...p,grade:e.target.value}))}>{t.grades1to12.map(g=><option key={g} value={g}>{g}</option>)}</Sel></div>
+      <div style={{marginBottom:14}}><Lbl T={T}>{t.subject}</Lbl>{normalizeList(nt.subjects).map((subjectKey,idx)=><div key={`new-sub-${idx}`} style={{display:"flex",gap:8,marginBottom:8}}><Sel T={T} value={subjectKey} onChange={e=>setNt(p=>{const next=normalizeList(p.subjects);next[idx]=e.target.value;return {...p,subjects:next};})}>{subjects.map((s)=><option key={s.id} value={s.id}>{lang==="ar"?s.label_ar:s.label_en}</option>)}</Sel>{normalizeList(nt.subjects).length>1&&<BtnO T={T} type="button" style={{padding:"6px 10px",fontSize:11}} onClick={()=>setNt(p=>{const next=normalizeList(p.subjects).filter((_,i)=>i!==idx);return {...p,subjects:next.length?next:[subjects[0]?.id||"math"]};})}>{t.removeItem}</BtnO>}</div>)}<BtnO T={T} type="button" style={{padding:"6px 10px",fontSize:11}} onClick={()=>addTeacherSubjectField(false)}><Ic n="plus" size={12} color={T.text}/>{t.addAnotherSubject}</BtnO></div>
+      <div style={{marginBottom:18}}><Lbl T={T}>{t.gradeForTeacher}</Lbl>{normalizeList(nt.grades).map((gradeLabel,idx)=><div key={`new-grade-${idx}`} style={{display:"flex",gap:8,marginBottom:8}}><Sel T={T} value={gradeLabel} onChange={e=>setNt(p=>{const next=normalizeList(p.grades);next[idx]=e.target.value;return {...p,grades:next};})}>{t.grades1to12.map(g=><option key={g} value={g}>{g}</option>)}</Sel>{normalizeList(nt.grades).length>1&&<BtnO T={T} type="button" style={{padding:"6px 10px",fontSize:11}} onClick={()=>setNt(p=>{const next=normalizeList(p.grades).filter((_,i)=>i!==idx);return {...p,grades:next.length?next:[t.grades1to12[0]]};})}>{t.removeItem}</BtnO>}</div>)}<BtnO T={T} type="button" style={{padding:"6px 10px",fontSize:11}} onClick={()=>addTeacherGradeField(false)}><Ic n="plus" size={12} color={T.text}/>{t.addAnotherClass}</BtnO></div>
       <div style={{marginBottom:16}}><Lbl T={T}>Photo</Lbl><Inp T={T} type="file" accept="image/*" onChange={e=>handlePhotoSelect(setNt,e.target.files?.[0])}/>{nt.photo_url&&<div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}><img src={nt.photo_url} alt={nt.name||"teacher"} style={{width:42,height:42,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/><BtnO T={T} type="button" style={{padding:"4px 10px",fontSize:11}} onClick={()=>setNt(p=>({...p,photo_url:""}))}>Remove</BtnO></div>}</div>
       <div style={{marginBottom:12}}><Checkbox checked={ntCred.enabled} onChange={()=>setNtCred(p=>({...p,enabled:!p.enabled}))} label={t.createApprovedLogin} T={T}/></div>
       {ntCred.enabled&&<div style={{marginBottom:16}}><Lbl T={T}>{t.newPassword}</Lbl><Inp T={T} type="password" value={ntCred.password} onChange={e=>setNtCred(p=>({...p,password:e.target.value}))}/></div>}
@@ -1517,8 +1627,8 @@ function AdminDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,c
       <div style={{marginBottom:14}}><Lbl T={T}>{t.name}</Lbl><Inp T={T} value={editTeacher?.name||""} onChange={e=>setEditTeacher(p=>({...p,name:e.target.value}))}/></div>
       <div style={{marginBottom:14}}><Lbl T={T}>{t.emailLbl}</Lbl><Inp T={T} type="email" value={editTeacher?.email||""} onChange={e=>setEditTeacher(p=>({...p,email:e.target.value}))}/></div>
       <div style={{marginBottom:14}}><Lbl T={T}>{t.phone}</Lbl><Inp T={T} value={editTeacher?.phone||""} onChange={e=>setEditTeacher(p=>({...p,phone:e.target.value}))}/></div>
-      <div style={{marginBottom:14}}><Lbl T={T}>{t.subject}</Lbl><Sel T={T} value={editTeacher?.subject||subjects[0]?.id||"math"} onChange={e=>setEditTeacher(p=>({...p,subject:e.target.value}))}>{subjects.map((s)=><option key={s.id} value={s.id}>{lang==="ar"?s.label_ar:s.label_en}</option>)}</Sel></div>
-      <div style={{marginBottom:18}}><Lbl T={T}>{t.gradeForTeacher}</Lbl><Sel T={T} value={editTeacher?.grade||t.grades1to12[0]} onChange={e=>setEditTeacher(p=>({...p,grade:e.target.value}))}>{t.grades1to12.map(g=><option key={g} value={g}>{g}</option>)}</Sel></div>
+      <div style={{marginBottom:14}}><Lbl T={T}>{t.subject}</Lbl>{normalizeList(editTeacher?.subjects).map((subjectKey,idx)=><div key={`edit-sub-${idx}`} style={{display:"flex",gap:8,marginBottom:8}}><Sel T={T} value={subjectKey} onChange={e=>setEditTeacher(p=>{const next=normalizeList(p?.subjects);next[idx]=e.target.value;return {...p,subjects:next};})}>{subjects.map((s)=><option key={s.id} value={s.id}>{lang==="ar"?s.label_ar:s.label_en}</option>)}</Sel>{normalizeList(editTeacher?.subjects).length>1&&<BtnO T={T} type="button" style={{padding:"6px 10px",fontSize:11}} onClick={()=>setEditTeacher(p=>{const next=normalizeList(p?.subjects).filter((_,i)=>i!==idx);return {...p,subjects:next.length?next:[subjects[0]?.id||"math"]};})}>{t.removeItem}</BtnO>}</div>)}<BtnO T={T} type="button" style={{padding:"6px 10px",fontSize:11}} onClick={()=>addTeacherSubjectField(true)}><Ic n="plus" size={12} color={T.text}/>{t.addAnotherSubject}</BtnO></div>
+      <div style={{marginBottom:18}}><Lbl T={T}>{t.gradeForTeacher}</Lbl>{normalizeList(editTeacher?.grades).map((gradeLabel,idx)=><div key={`edit-grade-${idx}`} style={{display:"flex",gap:8,marginBottom:8}}><Sel T={T} value={gradeLabel} onChange={e=>setEditTeacher(p=>{const next=normalizeList(p?.grades);next[idx]=e.target.value;return {...p,grades:next};})}>{t.grades1to12.map(g=><option key={g} value={g}>{g}</option>)}</Sel>{normalizeList(editTeacher?.grades).length>1&&<BtnO T={T} type="button" style={{padding:"6px 10px",fontSize:11}} onClick={()=>setEditTeacher(p=>{const next=normalizeList(p?.grades).filter((_,i)=>i!==idx);return {...p,grades:next.length?next:[t.grades1to12[0]]};})}>{t.removeItem}</BtnO>}</div>)}<BtnO T={T} type="button" style={{padding:"6px 10px",fontSize:11}} onClick={()=>addTeacherGradeField(true)}><Ic n="plus" size={12} color={T.text}/>{t.addAnotherClass}</BtnO></div>
       <div style={{marginBottom:16}}><Lbl T={T}>Photo</Lbl><Inp T={T} type="file" accept="image/*" onChange={e=>handlePhotoSelect(setEditTeacher,e.target.files?.[0])}/>{editTeacher?.photo_url&&<div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}><img src={editTeacher.photo_url} alt={editTeacher.name||"teacher"} style={{width:42,height:42,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}}/><BtnO T={T} type="button" style={{padding:"4px 10px",fontSize:11}} onClick={()=>setEditTeacher(p=>({...p,photo_url:""}))}>Remove</BtnO></div>}</div>
       {editTeacherLogin.has?<div style={{marginBottom:14,fontSize:12,color:T.success,background:`${T.success}14`,border:`1px solid ${T.success}44`,borderRadius:8,padding:"10px 12px"}}>{t.approvedLoginLinked}</div>:<>
         <div style={{marginBottom:12}}><Checkbox checked={editTeacherLogin.create} onChange={()=>setEditTeacherLogin(p=>({...p,create:!p.create}))} label={t.createLoginOnSave} T={T}/></div>
@@ -1555,8 +1665,15 @@ function TeacherDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
   const[sync,setSync]=useState(null);
   const SLABELS=subjects.map(s=>lang==="ar"?s.label_ar:s.label_en);
   const SKEYS=subjects.map(s=>s.id);
-  // Teacher's subject — ONLY this subject is editable
-  const tSubjKey=user.metadata?.subject||null;
+  const teacherSubjects=normalizeList(user.metadata?.subjects||user.metadata?.subject);
+  const teacherGrades=normalizeList(user.metadata?.grades||user.metadata?.grade);
+  const[activeSubject,setActiveSubject]=useState(firstOrNull(teacherSubjects)||null);
+  useEffect(()=>{
+    if(!activeSubject&&teacherSubjects.length>0){setActiveSubject(teacherSubjects[0]);return;}
+    if(activeSubject&&!teacherSubjects.includes(activeSubject)){setActiveSubject(firstOrNull(teacherSubjects)||null);}
+  },[activeSubject,teacherSubjects]);
+  // Teacher can edit one selected assigned subject at a time.
+  const tSubjKey=activeSubject;
   const tSubjLabel=tSubjKey?(SLABELS[SKEYS.indexOf(tSubjKey)]||tSubjKey):"—";
   useEffect(()=>{
     let alive=true;
@@ -1587,7 +1704,8 @@ function TeacherDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
     loadTeacherData();
     return()=>{alive=false;};
   },[]);
-  const grouped=students.reduce((a,s)=>{(a[s.grade]=a[s.grade]||[]).push(s);return a;},{});
+  const scopedStudents=(teacherGrades.length>0?students.filter(s=>teacherGrades.includes(s.grade)):students);
+  const grouped=scopedStudents.reduce((a,s)=>{(a[s.grade]=a[s.grade]||[]).push(s);return a;},{});
   const requireToken=()=>{
     if(SB_READY&&!user?.accessToken){
       setToast("!Session expired. Please sign in again.");
@@ -1658,7 +1776,7 @@ function TeacherDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
   return <PageShell T={T} t={t} themeMode={themeMode} onThemeChange={onThemeChange} lang={lang} onToggleLang={onToggleLang} onBack={onBack} title={t.teacher} icon="teacher" sync={sync}
     rightEl={<BtnO T={T} style={{padding:"7px 14px",fontSize:12}} onClick={onSignOut}><Ic n="signout" size={14} color={T.textSub}/>{t.signOut}</BtnO>}>
     {toast&&<Toast msg={toast} onDone={()=>setToast("")} T={T}/>}
-    <InfoCard T={T} name={user.name} icon="teacher" photoUrl={user.metadata?.photo_url||""} details={[{icon:"book",label:t.subject,value:tSubjLabel},{icon:"phone",label:t.phone,value:user.metadata?.phone||"—"}]}/>
+    <InfoCard T={T} name={user.name} icon="teacher" photoUrl={user.metadata?.photo_url||""} details={[{icon:"book",label:t.subject,value:teacherSubjects.map(sk=>SLABELS[SKEYS.indexOf(sk)]||sk).join(", ")||"—"},{icon:"grades",label:t.classes,value:teacherGrades.join(", ")||"—"},{icon:"phone",label:t.phone,value:user.metadata?.phone||"—"}]}/>
     <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",borderRadius:9,background:`${T.warn}14`,border:`1px solid ${T.warn}33`,marginBottom:22,fontSize:12,color:T.warn}}>
       <Ic n="alert" size={14} color={T.warn}/>{t.mySubjectOnly}: <strong style={{margin:"0 4px"}}>{tSubjLabel}</strong>
     </div>
@@ -1673,6 +1791,7 @@ function TeacherDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang
     </div>
 
     <Modal open={!!activeGrade} onClose={()=>setActiveGrade(null)} title={activeGrade||""} width={740} T={T} dir={dir}>
+      {teacherSubjects.length>1&&<div style={{marginBottom:12}}><Lbl T={T}>{t.subject}</Lbl><Sel T={T} value={tSubjKey||teacherSubjects[0]} onChange={e=>setActiveSubject(e.target.value)}>{teacherSubjects.map(sk=><option key={sk} value={sk}>{SLABELS[SKEYS.indexOf(sk)]||sk}</option>)}</Sel></div>}
       <div style={{display:"flex",gap:6,marginBottom:22}}>
         {[["attendance",t.attendance,"attend"],["grades",t.gradesTxt,"grades"]].map(([tb,lbl,ic])=><button key={tb} onClick={()=>setTab(tb)} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 18px",borderRadius:7,border:`1px solid ${tab===tb?T.accent:T.border}`,background:tab===tb?T.accent:"transparent",color:tab===tb?T.accentInv:T.textSub,cursor:"pointer",fontSize:12,fontWeight:600}}><Ic n={ic} size={13} color={tab===tb?T.accentInv:T.textSub}/>{lbl}</button>)}
       </div>
@@ -2103,7 +2222,7 @@ export default function App(){
     async function loadBootData(){
       const[dSub,dUsers,dPeriods,dGrades]=await Promise.all([
         sb.get("subjects","?order=created_at.asc"),
-        sb.get("app_users","?select=email,name,role,phone,grade,subject,bus_number,route,photo_url&order=created_at.asc"),
+        sb.get("app_users","?select=email,name,role,phone,grade,grades,subject,subjects,bus_number,route,photo_url&order=created_at.asc"),
         sb.get("grade_periods","?order=created_at.asc"),
         sb.get("grades","?select=student_id,period_id,scores"),
       ]);
@@ -2111,13 +2230,15 @@ export default function App(){
         setSubjects(dSub.map(s=>({id:s.id,label_ar:s.label_ar,label_en:s.label_en})));
       }
       if(alive&&dUsers&&dUsers.length>0){
-        const mapped=Object.fromEntries(dUsers.map(u=>[u.email,{
+        const mapped=Object.fromEntries(dUsers.map(u=>[normalizeEmail(u.email),{
           name:u.name||u.email,
           role:u.role||"teacher",
           metadata:{
             phone:u.phone||"",
             grade:u.grade||null,
+            grades:normalizeList(u.grades||u.grade),
             subject:u.subject||null,
+            subjects:normalizeList(u.subjects||u.subject),
             busNumber:u.bus_number||null,
             route:u.route||null,
             photo_url:u.photo_url||"",

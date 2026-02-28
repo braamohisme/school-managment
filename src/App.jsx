@@ -530,17 +530,18 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
   const submit=async()=>{
     setErr("");setLoading(true);
     try{
-      const u=creds[email];
+      const normalizedEmail=String(email||"").trim().toLowerCase();
+      const u=creds[normalizedEmail];
       if(SB_READY){
-        const sess=await sb.signIn(email,pass);
+        const sess=await sb.signIn(normalizedEmail,pass);
         if(!sess){setErr(t.invalidCreds);return;}
-        const fallback=u||{name:email,role:null,metadata:{}};
-        let fromDb=(await sb.get("app_users",`?email=eq.${esc(email)}&select=name,role,phone,grade,subject,bus_number,route&limit=1`,sess.access_token||null))?.[0];
+        const fallback=u||{name:normalizedEmail,role:null,metadata:{}};
+        let fromDb=(await sb.get("app_users",`?email=eq.${esc(normalizedEmail)}&select=name,role,phone,grade,subject,bus_number,route&limit=1`,sess.access_token||null))?.[0];
         if(!fromDb&&u){
           // Self-heal: if Auth exists but app_users row is missing, create it from local approved-login cache.
           await sb.upsert("app_users",[{
-            email,
-            name:u.name||email,
+            email:normalizedEmail,
+            name:u.name||normalizedEmail,
             role:u.role||"student",
             phone:u.metadata?.phone||null,
             grade:u.metadata?.grade||null,
@@ -548,10 +549,10 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
             bus_number:u.metadata?.busNumber||null,
             route:u.metadata?.route||null,
           }],sess.access_token||null);
-          fromDb=(await sb.get("app_users",`?email=eq.${esc(email)}&select=name,role,phone,grade,subject,bus_number,route&limit=1`,sess.access_token||null))?.[0];
+          fromDb=(await sb.get("app_users",`?email=eq.${esc(normalizedEmail)}&select=name,role,phone,grade,subject,bus_number,route&limit=1`,sess.access_token||null))?.[0];
         }
         const dbUser=fromDb?{
-          name:fromDb.name||fallback.name||email,
+          name:fromDb.name||fallback.name||normalizedEmail,
           role:fromDb.role||fallback.role,
           metadata:{
             ...fallback.metadata,
@@ -563,12 +564,12 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
           },
         }:null;
         if(!dbUser&&!u){setErr(t.accessDenied);return;}
-        onLogin({email,...(dbUser||u),accessToken:sess.access_token||null,refreshToken:sess.refresh_token||null},keep);
+        onLogin({email:normalizedEmail,...(dbUser||u),accessToken:sess.access_token||null,refreshToken:sess.refresh_token||null},keep);
         return;
       }
       if(!u){setErr(t.accessDenied);return;}
       // Offline demo mode only.
-      if(DEMO_PASSWORDS[email]===pass){onLogin({email,...u},keep);}
+      if(DEMO_PASSWORDS[normalizedEmail]===pass){onLogin({email:normalizedEmail,...u},keep);}
       else{setErr(t.invalidCreds);}
     }finally{setLoading(false);}
   };
@@ -598,7 +599,7 @@ function Login({onLogin,themeMode,onThemeChange,lang,onToggleLang,creds}){
         <div style={{fontSize:14,color:T.textSub,marginTop:6}}>{t.signIn}</div>
       </div>
       <Card T={T} style={{padding:28}}>
-        <div style={{marginBottom:16}}><Lbl T={T}>{t.email}</Lbl><Inp T={T} type="email" placeholder="you@school.edu" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}/></div>
+        <div style={{marginBottom:16}}><Lbl T={T}>{t.email}</Lbl><Inp T={T} type="email" placeholder="you@school.edu" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}/></div>
         <div style={{marginBottom:16}}><Lbl T={T}>{t.password}</Lbl><Inp T={T} type="password" placeholder="••••••••" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}/></div>
         <div style={{marginBottom:20}}><Checkbox checked={keep} onChange={()=>setKeep(v=>!v)} label={t.keepLoggedIn} T={T}/></div>
         {err&&<div style={{display:"flex",alignItems:"center",gap:7,color:T.danger,fontSize:13,marginBottom:14,padding:"9px 12px",background:`${T.danger}12`,borderRadius:7}}><Ic n="alert" size={14} color={T.danger}/>{err}</div>}

@@ -3053,6 +3053,7 @@ function PrincipalDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLa
 // ── Bus Driver Dashboard ──────────────────────────────────────────────────────
 function BusDriverDashboard({user,onBack,themeMode,onThemeChange,lang,onToggleLang,onSignOut}){
   const T=getTheme(themeMode),t=TR[lang];
+  const isMobile=useIsMobile();
   const[tracking,setTracking]=useState(false);
   const[routeUrl,setRouteUrl]=useState("");
   const[lastLoc,setLastLoc]=useState(null);

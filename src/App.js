@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
-// Read from environment variables (set these in your build / .env) with fallback
-const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || "https://lyvmoeqhnjhwdaqafmkw.supabase.co";
-const SUPABASE_KEY = process.env.REACT_APP_SUPABASE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5dm1vZXFobmpod2RhcWFmbWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyMTkxNjQsImV4cCI6MjA4Nzc5NTE2NH0.H8poCkol5j72vChfFYw4Dut9FZFxZ-wDBsEbGQ2DirM";
+// Read from Vite env vars (set in .env / Vercel) with fallback
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://lyvmoeqhnjhwdaqafmkw.supabase.co";
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5dm1vZXFobmpod2RhcWFmbWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyMTkxNjQsImV4cCI6MjA4Nzc5NTE2NH0.H8poCkol5j72vChfFYw4Dut9FZFxZ-wDBsEbGQ2DirM";
 const H = { "Content-Type":"application/json", apikey:SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}` };
 
 const sb = {

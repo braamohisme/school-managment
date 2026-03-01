@@ -1,10 +1,13 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// Set base path from env or default to /zhoral3raq-deploy
-const base = process.env.VITE_BASE_PATH || '/zhoral3raq-deploy'
+// Set base path from env, default root
+const base = process.env.VITE_BASE_PATH || '/'
 
 export default defineConfig({
   base,
+  build: {
+    outDir: 'build',
+  },
   plugins: [react()],
 })
